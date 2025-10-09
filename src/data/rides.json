@@ -1,0 +1,37 @@
+{
+  "rides": [
+    {
+      "service_type": "delivery",
+      "customer_name": "xferx4",
+      "customer_phone": "2342",
+      "pickup_address": "64, شارع سيدى العراقى, مدينة الضباط بسيدي بشر, ميامي, الإسكندرية, 21923, مصر",
+      "pickup_coordinates": "31.265895479913482, 30.007587923939038",
+      "dropoff_address": "275, طريق الجيش, فلمنج, ميامي, الإسكندرية, 21531, مصر",
+      "dropoff_coordinates": "31.235976120950752, 29.950344192483087",
+      "ride_type": "scooter",
+      "vehicle_type": "scooter",
+      "payment_method": "cash",
+      "estimated_distance": "6.4 كم",
+      "estimated_duration": "13 دقيقة",
+      "fare": 42,
+      "status": "pending",
+      "driver_id": null,
+      "driver_name": null,
+      "driver_phone": null,
+      "delivery_details": {
+        "senderName": "xferx4",
+        "senderPhone": "2342",
+        "receiverName": "frefer4",
+        "receiverPhone": "24",
+        "packageDescription": "",
+        "packageValue": "",
+        "specialInstructions": ""
+      },
+      "id": 1,
+      "created_at": "2025-09-27T09:21:27.604Z",
+      "updated_at": "2025-09-27T09:21:27.604Z"
+    }
+  ],
+  "nextId": 2,
+  "lastUpdated": "2025-09-27T09:21:27.606Z"
+}
