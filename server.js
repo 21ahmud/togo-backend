@@ -40,9 +40,13 @@ app.use(helmet({
   crossOriginResourcePolicy: false,
 }));
 
+// Replace lines 44-58 in your server.js with this updated CORS configuration:
+
 const corsOptions = {
   origin: [
-    'http://localhost:5173',
+    'https://togo-5202e.web.app',           // Your Firebase production app
+    'https://togo-5202e.firebaseapp.com',   // Firebase alternate domain
+    'http://localhost:5173',                 // Vite dev server
     'http://localhost:5174', 
     'http://localhost:3000',
     'http://127.0.0.1:5173',
@@ -63,6 +67,7 @@ const corsOptions = {
 
 app.use(cors(corsOptions));
 
+// Keep the OPTIONS handler as is
 app.use((req, res, next) => {
   if (req.method === 'OPTIONS') {
     res.header('Access-Control-Allow-Origin', req.headers.origin);
