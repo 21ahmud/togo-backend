@@ -1,4 +1,4 @@
-// src/models/User.js - SQLite Compatible Version with Order Integration
+// src/models/User.js - PostgreSQL Production Version
 const { DataTypes } = require('sequelize');
 const bcrypt = require('bcryptjs');
 const sequelize = require('../config/database');
@@ -6,223 +6,195 @@ const sequelize = require('../config/database');
 const User = sequelize.define(
   'User',
   {
-  id: {
-    type: DataTypes.INTEGER,
-    primaryKey: true,
-    autoIncrement: true
-  },
-  name: {
-    type: DataTypes.STRING,
-    allowNull: false,
-    validate: {
-      notEmpty: true,
-      len: [2, 100]
-    }
-  },
-  email: {
-    type: DataTypes.STRING,
-    allowNull: false,
-    unique: true,
-    validate: {
-      isEmail: true,
-      notEmpty: true
-    }
-  },
-  phone: {
-    type: DataTypes.STRING,
-    allowNull: false,
-    unique: true,
-    validate: {
-      notEmpty: true,
-      len: [10, 20]
-    }
-  },
-  password: {
-    type: DataTypes.STRING,
-    allowNull: false,
-    validate: {
-      notEmpty: true,
-      len: [6, 255]
-    }
-  },
-  role: {
-    type: DataTypes.STRING, // Changed from ENUM to STRING for SQLite compatibility
-    allowNull: false,
-    defaultValue: 'customer',
-    validate: {
-      isIn: [['customer', 'restaurant', 'pharmacy', 'driver', 'delivery', 'admin']]
-    }
-  },
-  
-  // Status fields
-  isVerified: {
-    type: DataTypes.BOOLEAN,
-    allowNull: false,
-    defaultValue: false
-  },
-  isActive: {
-    type: DataTypes.BOOLEAN,
-    allowNull: false,
-    defaultValue: true
-  },
-  online: {
-    type: DataTypes.BOOLEAN,
-    allowNull: true,
-    defaultValue: false
-  },
-  forceOffline: {
-    type: DataTypes.BOOLEAN,
-    allowNull: false,
-    defaultValue: false
-  },
-  
-  // Business specific fields
-  restaurantName: {
-    type: DataTypes.STRING,
-    allowNull: true
-  },
-  pharmacyName: {
-    type: DataTypes.STRING,
-    allowNull: true
-  },
-  cuisineType: {
-    type: DataTypes.STRING,
-    allowNull: true
-  },
-  
-  // Driver/Delivery fields for order integration
-  license: {
-    type: DataTypes.STRING,
-    allowNull: true
-  },
-  vehicle: {
-    type: DataTypes.TEXT, // SQLite doesn't have JSON type, use TEXT
-    allowNull: true,
-    get() {
-      const value = this.getDataValue('vehicle');
-      return value ? JSON.parse(value) : null;
+    id: {
+      type: DataTypes.INTEGER,
+      primaryKey: true,
+      autoIncrement: true
     },
-    set(value) {
-      this.setDataValue('vehicle', value ? JSON.stringify(value) : null);
-    }
-  },
-  location: {
-    type: DataTypes.TEXT, // SQLite doesn't have JSON type, use TEXT
-    allowNull: true,
-    defaultValue: JSON.stringify({ lat: 30.0444, lng: 31.2357 }),
-    get() {
-      const value = this.getDataValue('location');
-      return value ? JSON.parse(value) : { lat: 30.0444, lng: 31.2357 };
-    },
-    set(value) {
-      this.setDataValue('location', JSON.stringify(value));
-    }
-  },
-  
-  // Statistics for delivery integration
-  totalRides: {
-    type: DataTypes.INTEGER,
-    allowNull: true,
-    defaultValue: 0
-  },
-  totalDeliveries: {
-    type: DataTypes.INTEGER,
-    allowNull: true,
-    defaultValue: 0
-  },
-  totalOrders: {
-    type: DataTypes.INTEGER,
-    allowNull: true,
-    defaultValue: 0
-  },
-  totalEarnings: {
-    type: DataTypes.DECIMAL(10, 2),
-    allowNull: true,
-    defaultValue: 0
-  },
-  rating: {
-    type: DataTypes.DECIMAL(3, 2),
-    allowNull: true,
-    defaultValue: 5.0,
-    validate: {
-      min: 0,
-      max: 5
-    }
-  },
-  
-  // Order integration fields
-  total_deliveries: {
-    type: DataTypes.INTEGER,
-    allowNull: true,
-    defaultValue: 0
-  },
-  total_earnings: {
-    type: DataTypes.DECIMAL(10, 2),
-    allowNull: true,
-    defaultValue: 0
-  },
-  force_offline: {
-    type: DataTypes.BOOLEAN,
-    allowNull: true,
-    defaultValue: false
-  },
-  
-  // Common fields
-  address: {
-    type: DataTypes.TEXT,
-    allowNull: true
-  },
-  avatar: {
-    type: DataTypes.STRING,
-    allowNull: true
-  },
-  lastLogin: {
-    type: DataTypes.DATE,
-    allowNull: true
-  }
-}, {
-  tableName: 'users',
-  freezeTableName: true,
-  timestamps: true, // This will create createdAt and updatedAt automatically
-  
-  // Model hooks
-  hooks: {
-    beforeCreate: async (user) => {
-      if (user.password) {
-        const salt = await bcrypt.genSalt(12);
-        user.password = await bcrypt.hash(user.password, salt);
+    name: {
+      type: DataTypes.STRING,
+      allowNull: false,
+      validate: {
+        notEmpty: true,
+        len: [2, 100]
       }
-      
-      // Clean up string fields
-      if (user.email) user.email = user.email.toLowerCase().trim();
-      if (user.name) user.name = user.name.trim();
-      if (user.phone) user.phone = user.phone.trim();
+    },
+    email: {
+      type: DataTypes.STRING,
+      allowNull: false,
+      unique: true,
+      validate: {
+        isEmail: true,
+        notEmpty: true
+      }
+    },
+    phone: {
+      type: DataTypes.STRING,
+      allowNull: false,
+      unique: true,
+      validate: {
+        notEmpty: true,
+        len: [10, 20]
+      }
+    },
+    password: {
+      type: DataTypes.STRING,
+      allowNull: false,
+      validate: {
+        notEmpty: true,
+        len: [6, 255]
+      }
+    },
+    role: {
+      type: DataTypes.ENUM('customer', 'restaurant', 'pharmacy', 'driver', 'delivery', 'admin'),
+      allowNull: false,
+      defaultValue: 'customer'
     },
     
-    beforeUpdate: async (user) => {
-      if (user.changed('password')) {
-        const salt = await bcrypt.genSalt(12);
-        user.password = await bcrypt.hash(user.password, salt);
+    // Status fields
+    isVerified: {
+      type: DataTypes.BOOLEAN,
+      allowNull: false,
+      defaultValue: false
+    },
+    isActive: {
+      type: DataTypes.BOOLEAN,
+      allowNull: false,
+      defaultValue: true
+    },
+    online: {
+      type: DataTypes.BOOLEAN,
+      allowNull: true,
+      defaultValue: false
+    },
+    forceOffline: {
+      type: DataTypes.BOOLEAN,
+      allowNull: false,
+      defaultValue: false
+    },
+    
+    // Business specific fields
+    restaurantName: {
+      type: DataTypes.STRING,
+      allowNull: true
+    },
+    pharmacyName: {
+      type: DataTypes.STRING,
+      allowNull: true
+    },
+    cuisineType: {
+      type: DataTypes.STRING,
+      allowNull: true
+    },
+    
+    // Driver/Delivery fields
+    license: {
+      type: DataTypes.STRING,
+      allowNull: true
+    },
+    vehicle: {
+      type: DataTypes.JSONB, // PostgreSQL native JSON
+      allowNull: true
+    },
+    location: {
+      type: DataTypes.JSONB, // PostgreSQL native JSON
+      allowNull: true,
+      defaultValue: { lat: 30.0444, lng: 31.2357 }
+    },
+    
+    // Statistics (consolidated - removed duplicates)
+    totalRides: {
+      type: DataTypes.INTEGER,
+      allowNull: true,
+      defaultValue: 0
+    },
+    totalDeliveries: {
+      type: DataTypes.INTEGER,
+      allowNull: true,
+      defaultValue: 0
+    },
+    totalOrders: {
+      type: DataTypes.INTEGER,
+      allowNull: true,
+      defaultValue: 0
+    },
+    totalEarnings: {
+      type: DataTypes.DECIMAL(10, 2),
+      allowNull: true,
+      defaultValue: 0
+    },
+    rating: {
+      type: DataTypes.DECIMAL(3, 2),
+      allowNull: true,
+      defaultValue: 5.0,
+      validate: {
+        min: 0,
+        max: 5
+      }
+    },
+    
+    // Common fields
+    address: {
+      type: DataTypes.TEXT,
+      allowNull: true
+    },
+    avatar: {
+      type: DataTypes.STRING,
+      allowNull: true
+    },
+    lastLogin: {
+      type: DataTypes.DATE,
+      allowNull: true
+    }
+  }, 
+  {
+    tableName: 'users',
+    freezeTableName: true,
+    timestamps: true,
+    
+    // Model hooks
+    hooks: {
+      beforeCreate: async (user) => {
+        if (user.password) {
+          const salt = await bcrypt.genSalt(12);
+          user.password = await bcrypt.hash(user.password, salt);
+        }
+        
+        // Clean up string fields
+        if (user.email) user.email = user.email.toLowerCase().trim();
+        if (user.name) user.name = user.name.trim();
+        if (user.phone) user.phone = user.phone.trim();
+      },
+      
+      beforeUpdate: async (user) => {
+        if (user.changed('password')) {
+          const salt = await bcrypt.genSalt(12);
+          user.password = await bcrypt.hash(user.password, salt);
+        }
+      }
+    },
+    
+    // Default scope excludes password
+    defaultScope: {
+      attributes: { exclude: ['password'] }
+    },
+    
+    // Scopes
+    scopes: {
+      withPassword: {
+        attributes: { include: ['password'] }
       }
     }
-  },
-  
-  // Default scope excludes password
-  defaultScope: {
-    attributes: { exclude: ['password'] }
-  },
-  
-  // Scopes
-  scopes: {
-    withPassword: {
-      attributes: { include: ['password'] }
-    }
   }
-});
+);
 
-// Instance methods
+// CRITICAL: Define instance methods BEFORE exporting
 User.prototype.comparePassword = async function(candidatePassword) {
   try {
+    if (!this.password) {
+      console.error('Password field not loaded. Use User.scope("withPassword").findOne()');
+      return false;
+    }
     return await bcrypt.compare(candidatePassword, this.password);
   } catch (error) {
     console.error('Password comparison error:', error);
@@ -237,4 +209,19 @@ User.prototype.toJSON = function() {
   return values;
 };
 
+// Static method to find user with password for authentication
+User.findByEmailWithPassword = async function(email) {
+  return await User.scope('withPassword').findOne({
+    where: { email: email.toLowerCase().trim() }
+  });
+};
+
+// Static method to find user by phone with password
+User.findByPhoneWithPassword = async function(phone) {
+  return await User.scope('withPassword').findOne({
+    where: { phone: phone.trim() }
+  });
+};
+
+// Export the model AFTER all methods are defined
 module.exports = User;

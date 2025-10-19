@@ -13,7 +13,7 @@ const driversRoutes = require('./src/routes/drivers');
 const ridesRoutes = require('./src/routes/rides');
 const publicRoutes = require('./src/routes/public');
 const deliveriesRoutes = require('./src/routes/deliveries');
-const deliveryRoutes = require('./src/routes/delivery'); // ADD THIS LINE
+const deliveryRoutes = require('./src/routes/delivery');
 const ordersRoutes = require('./src/routes/orders');
 const favoritesRoutes = require('./src/routes/favorites');
 const pharmaciesRoutes = require('./src/routes/pharmacies');
@@ -22,14 +22,17 @@ const menuItemsRoutes = require('./src/routes/menuItems');
 const prescriptionsRoutes = require('./src/routes/prescriptions');
 const notificationsRoutes = require('./src/routes/notifications');
 
-// Import models
-const User = require('./src/models/User');
-const Order = require('./src/models/Order');
-const Pharmacy = require('./src/models/Pharmacy');
-const Restaurant = require('./src/models/Restaurant');
-const MenuItem = require('./src/models/MenuItem');
-const Prescription = require('./src/models/Prescription');
-const Ride = require('./src/models/Ride');
+// Import models from centralized index
+const {
+  User,
+  Restaurant,
+  MenuItem,
+  Pharmacy,
+  Prescription,
+  Order,
+  Ride,
+  initializeDatabase
+} = require('./src/models');
 
 const app = express();
 
@@ -108,7 +111,7 @@ app.use('/api/drivers', driversRoutes);
 app.use('/api/rides', ridesRoutes);
 app.use('/api/public', publicRoutes);
 app.use('/api/deliveries', deliveriesRoutes);
-app.use('/api/delivery', deliveryRoutes); // ADD THIS LINE
+app.use('/api/delivery', deliveryRoutes);
 app.use('/api/orders', ordersRoutes);
 app.use('/api/favorites', favoritesRoutes);
 app.use('/api/pharmacies', pharmaciesRoutes);
@@ -159,6 +162,7 @@ app.get('/api/debug/db-status', async (req, res) => {
     let orderCount = 0;
     let prescriptionCount = 0;
     let rideCount = 0;
+    let deliveryCount = 0;
     
     try {
       restaurantCount = await Restaurant.count();
@@ -196,6 +200,12 @@ app.get('/api/debug/db-status', async (req, res) => {
       console.warn('Ride model not available');
     }
 
+    try {
+      deliveryCount = await Delivery.count();
+    } catch (e) {
+      console.warn('Delivery model not available');
+    }
+
     const recentUsers = await User.findAll({ 
       limit: 5, 
       order: [['createdAt', 'DESC']],
@@ -228,6 +238,7 @@ app.get('/api/debug/db-status', async (req, res) => {
         orderCount,
         prescriptionCount,
         rideCount,
+        deliveryCount,
         recentUsers,
         file: dbFileInfo
       },
@@ -294,7 +305,6 @@ app.get('/debug/create-test-user', async (req, res) => {
   }
 });
 
-// Create test delivery user endpoint
 app.get('/debug/create-delivery-user', async (req, res) => {
   if (process.env.NODE_ENV !== 'development') {
     return res.status(404).json({ message: 'Not found' });
@@ -328,8 +338,8 @@ app.get('/debug/create-delivery-user', async (req, res) => {
       license: 'DL123456',
       vehicle: { type: 'motorcycle', model: 'Honda CG 125' },
       rating: 4.8,
-      total_deliveries: 45,
-      total_earnings: 1250.50,
+      totalDeliveries: 45,
+      totalEarnings: 1250.50,
       online: false,
       forceOffline: false
     });
@@ -352,7 +362,6 @@ app.get('/debug/create-delivery-user', async (req, res) => {
   }
 });
 
-// Create test driver user endpoint
 app.get('/debug/create-driver-user', async (req, res) => {
   if (process.env.NODE_ENV !== 'development') {
     return res.status(404).json({ message: 'Not found' });
@@ -384,7 +393,7 @@ app.get('/debug/create-driver-user', async (req, res) => {
       isVerified: true,
       isActive: true,
       license: 'DR123456',
-      vehicle: 'سيارة عادية',
+      vehicle: { type: 'car', model: 'سيارة عادية' },
       rating: 4.7,
       totalRides: 28,
       totalEarnings: 850.25,
@@ -410,7 +419,6 @@ app.get('/debug/create-driver-user', async (req, res) => {
   }
 });
 
-// Create test pharmacy user endpoint
 app.get('/debug/create-pharmacy-user', async (req, res) => {
   if (process.env.NODE_ENV !== 'development') {
     return res.status(404).json({ message: 'Not found' });
@@ -439,10 +447,9 @@ app.get('/debug/create-pharmacy-user', async (req, res) => {
       phone: '01234567892',
       password: 'password123',
       role: 'pharmacy',
+      pharmacyName: 'صيدلية الشفاء',
       isVerified: true,
-      isActive: true,
-      license_number: 'PH123456',
-      status: 'active'
+      isActive: true
     });
     
     res.json({
@@ -475,7 +482,7 @@ app.get('/', (req, res) => {
       drivers: '/api/drivers',
       rides: '/api/rides',
       deliveries: '/api/deliveries',
-      delivery: '/api/delivery', // ADD THIS LINE
+      delivery: '/api/delivery',
       orders: '/api/orders',
       favorites: '/api/favorites',
       pharmacies: '/api/pharmacies',
@@ -584,198 +591,8 @@ const startServer = async () => {
       }
     }
 
-    console.log('🔗 Setting up model associations...');
-    try {
-      // User - Pharmacy associations
-      User.hasOne(Pharmacy, { 
-        foreignKey: 'userId', 
-        as: 'pharmacy',
-        onDelete: 'CASCADE'
-      });
-      
-      Pharmacy.belongsTo(User, { 
-        foreignKey: 'userId', 
-        as: 'user',
-        onDelete: 'CASCADE'
-      });
-
-      // User - Restaurant associations
-      User.hasOne(Restaurant, {
-        foreignKey: 'user_id',
-        as: 'restaurant',
-        onDelete: 'CASCADE'
-      });
-
-      Restaurant.belongsTo(User, {
-        foreignKey: 'user_id',
-        as: 'user',
-        onDelete: 'CASCADE'
-      });
-
-      // User - MenuItem associations
-      User.hasMany(MenuItem, {
-        foreignKey: 'restaurant_id',
-        as: 'menuItems',
-        onDelete: 'CASCADE'
-      });
-
-      MenuItem.belongsTo(User, {
-        foreignKey: 'restaurant_id',
-        as: 'restaurant',
-        onDelete: 'CASCADE'
-      });
-
-      // User - Order associations
-      User.hasMany(Order, { 
-        foreignKey: 'user_id', 
-        as: 'orders',
-        onDelete: 'CASCADE'
-      });
-
-      Order.belongsTo(User, { 
-        foreignKey: 'user_id', 
-        as: 'customer',
-        onDelete: 'CASCADE'
-      });
-
-      User.hasMany(Order, { 
-        foreignKey: 'assigned_to', 
-        as: 'delivery_orders',
-        onDelete: 'SET NULL'
-      });
-
-      Order.belongsTo(User, { 
-        foreignKey: 'assigned_to', 
-        as: 'delivery_driver',
-        onDelete: 'SET NULL'
-      });
-
-      // User - Prescription associations
-      User.hasMany(Prescription, { 
-        foreignKey: 'pharmacyId', 
-        as: 'prescriptions',
-        onDelete: 'CASCADE'
-      });
-
-      Prescription.belongsTo(User, { 
-        foreignKey: 'pharmacyId', 
-        as: 'pharmacy',
-        onDelete: 'CASCADE'
-      });
-
-      // RIDE ASSOCIATIONS
-      User.hasMany(Ride, { 
-        foreignKey: 'driver_id', 
-        as: 'driver_rides',
-        onDelete: 'SET NULL'
-      });
-
-      Ride.belongsTo(User, { 
-        foreignKey: 'driver_id', 
-        as: 'driver',
-        onDelete: 'SET NULL'
-      });
-      
-      console.log('✅ Model associations set up successfully');
-    } catch (associationError) {
-      console.warn('⚠️  Model association setup failed:', associationError.message);
-    }
-
-    console.log('🔄 Syncing database...');
-    
-    const syncOptions = {
-      force: false,
-      alter: false,
-    };
-
-    try {
-      await sequelize.sync(syncOptions);
-      console.log('✅ Database synchronized successfully');
-      
-      if (sequelize.getDialect() === 'sqlite' && sequelize.config.storage) {
-        if (fs.existsSync(sequelize.config.storage)) {
-          const stats = fs.statSync(sequelize.config.storage);
-          console.log(`📁 Database file size: ${stats.size} bytes`);
-          console.log(`📁 Database file path: ${sequelize.config.storage}`);
-        } else {
-          console.warn('⚠️  Database file does not exist after sync!');
-        }
-      }
-      
-    } catch (syncError) {
-      console.error('❌ Database sync error:', syncError.message);
-      throw syncError;
-    }
-
-    try {
-      const userCount = await User.count();
-      let pharmacyCount = 0;
-      let restaurantCount = 0;
-      let menuItemCount = 0;
-      let orderCount = 0;
-      let prescriptionCount = 0;
-      let rideCount = 0;
-      
-      try {
-        pharmacyCount = await Pharmacy.count();
-      } catch (e) {
-        console.warn('Pharmacy model not available');
-      }
-      
-      try {
-        restaurantCount = await Restaurant.count();
-      } catch (e) {
-        console.warn('Restaurant model not available');
-      }
-
-      try {
-        menuItemCount = await MenuItem.count();
-      } catch (e) {
-        console.warn('MenuItem model not available');
-      }
-
-      try {
-        orderCount = await Order.count();
-      } catch (e) {
-        console.warn('Order model not available');
-      }
-
-      try {
-        prescriptionCount = await Prescription.count();
-      } catch (e) {
-        console.warn('Prescription model not available');
-      }
-
-      try {
-        rideCount = await Ride.count();
-      } catch (e) {
-        console.warn('Ride model not available');
-      }
-      
-      console.log(`📊 Current users in database: ${userCount}`);
-      console.log(`📊 Current pharmacies in database: ${pharmacyCount}`);
-      console.log(`📊 Current restaurants in database: ${restaurantCount}`);
-      console.log(`📊 Current menu items in database: ${menuItemCount}`);
-      console.log(`📊 Current orders in database: ${orderCount}`);
-      console.log(`📊 Current prescriptions in database: ${prescriptionCount}`);
-      console.log(`📊 Current rides in database: ${rideCount}`);
-      
-      if (userCount > 0) {
-        const recentUsers = await User.findAll({ 
-          limit: 3, 
-          order: [['createdAt', 'DESC']],
-          attributes: ['id', 'name', 'email', 'role', 'createdAt']
-        });
-        console.log('Recent users:', recentUsers.map(u => ({ 
-          id: u.id, 
-          email: u.email, 
-          role: u.role 
-        })));
-      }
-      
-    } catch (modelError) {
-      console.warn('⚠️  Model count failed:', modelError.message);
-    }
+    // Initialize database with associations - replaces manual association setup
+    await initializeDatabase();
 
     const server = app.listen(PORT, () => {
       console.log('🎉 Server started successfully!');
@@ -787,7 +604,7 @@ const startServer = async () => {
       console.log(`📦 Orders endpoint: http://localhost:${PORT}/api/orders`);
       console.log(`🚗 Rides endpoint: http://localhost:${PORT}/api/rides`);
       console.log(`🚚 Deliveries endpoint: http://localhost:${PORT}/api/deliveries`);
-      console.log(`📱 Delivery Status endpoint: http://localhost:${PORT}/api/delivery`); // ADD THIS LINE
+      console.log(`📱 Delivery Status endpoint: http://localhost:${PORT}/api/delivery`);
       console.log(`🔔 Notifications endpoint: http://localhost:${PORT}/api/notifications`);
       console.log(`🍽️  Restaurants endpoint: http://localhost:${PORT}/api/restaurants`);
       console.log(`🍕 Menu Items endpoint: http://localhost:${PORT}/api/menu-items`);
