@@ -2,7 +2,7 @@
 const express = require('express');
 const { Op } = require('sequelize');
 const User = require('../models/User');
-const Ride = require('../models/Ride'); // Import Ride model instead of rideStorage
+const Ride = require('../models/Ride');
 
 const router = express.Router();
 
@@ -17,7 +17,6 @@ router.get('/drivers', async (req, res) => {
         online: true,
         isActive: true,
         isVerified: true,
-        // Fixed Sequelize syntax - using Op.or and proper column references
         [Op.or]: [
           { forceOffline: { [Op.or]: [false, null] } },
           { force_offline: { [Op.or]: [false, null] } }
@@ -28,13 +27,12 @@ router.get('/drivers', async (req, res) => {
         'vehicle', 
         'online', 
         'rating'
-      ], // Only return safe, public information
+      ],
       order: [['createdAt', 'DESC']]
     });
 
     console.log(`Found ${drivers.length} available drivers`);
 
-    // Return minimal driver info for public consumption
     const publicDrivers = drivers.map(driver => ({
       id: driver.id,
       vehicle: driver.vehicle,
@@ -50,16 +48,21 @@ router.get('/drivers', async (req, res) => {
 
   } catch (error) {
     console.error('Public get drivers error:', error);
+    console.error('Error stack:', error.stack);
     res.status(500).json({
       success: false,
-      message: 'فشل في جلب بيانات السائقين المتاحين'
+      message: 'فشل في جلب بيانات السائقين المتاحين',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
     });
   }
 });
 
-// Create ride request (public - no auth required) - NOW USING DATABASE
+// Create ride request (public - no auth required)
 router.post('/rides', async (req, res) => {
   try {
+    console.log('=== PUBLIC RIDE REQUEST RECEIVED ===');
+    console.log('Request body:', JSON.stringify(req.body, null, 2));
+
     const {
       service_type,
       customer_name,
@@ -77,24 +80,36 @@ router.post('/rides', async (req, res) => {
       delivery_details
     } = req.body;
 
-    console.log('Public ride request:', {
+    console.log('Extracted data:', {
       service_type,
       customer_name,
+      customer_phone,
+      pickup_address: pickup_address?.substring(0, 50),
+      dropoff_address: dropoff_address?.substring(0, 50),
       ride_type,
-      pickup_address
+      vehicle_type,
+      fare
     });
 
     // Validate required fields
     if (!customer_name || !customer_phone || !pickup_address || !dropoff_address) {
+      console.error('Validation failed - missing required fields');
       return res.status(400).json({
         success: false,
-        message: 'البيانات المطلوبة ناقصة'
+        message: 'البيانات المطلوبة ناقصة',
+        missing: {
+          customer_name: !customer_name,
+          customer_phone: !customer_phone,
+          pickup_address: !pickup_address,
+          dropoff_address: !dropoff_address
+        }
       });
     }
 
     // Validate service type specific fields
     if (service_type === 'delivery' && delivery_details) {
       if (!delivery_details.receiverName || !delivery_details.receiverPhone) {
+        console.error('Validation failed - missing delivery details');
         return res.status(400).json({
           success: false,
           message: 'بيانات المستلم مطلوبة للتوصيل'
@@ -102,33 +117,40 @@ router.post('/rides', async (req, res) => {
       }
     }
 
-    // Create new ride in DATABASE (not memory)
-    const newRide = await Ride.create({
+    console.log('Creating ride in database...');
+
+    // Create new ride in database
+    const rideData = {
       service_type: service_type || 'ride',
       customer_name,
       customer_phone,
       pickup_address,
-      pickup_coordinates,
+      pickup_coordinates: pickup_coordinates || null,
       dropoff_address,
-      dropoff_coordinates,
-      ride_type,
-      vehicle_type,
+      dropoff_coordinates: dropoff_coordinates || null,
+      ride_type: ride_type || 'standard',
+      vehicle_type: vehicle_type || 'car',
       payment_method: payment_method || 'cash',
-      estimated_distance,
-      estimated_duration,
+      estimated_distance: estimated_distance || null,
+      estimated_duration: estimated_duration || null,
       fare: parseFloat(fare) || 0,
       status: 'pending',
       driver_id: null,
       driver_name: null,
       driver_phone: null,
-      delivery_details
-    });
+      delivery_details: delivery_details || null
+    };
 
-    console.log('Public ride created successfully in database:', {
+    console.log('Ride data to be created:', JSON.stringify(rideData, null, 2));
+
+    const newRide = await Ride.create(rideData);
+
+    console.log('✅ Ride created successfully in database:', {
       id: newRide.id,
       service_type: newRide.service_type,
       customer: newRide.customer_name,
-      ride_type: newRide.ride_type
+      ride_type: newRide.ride_type,
+      status: newRide.status
     });
 
     res.json({
@@ -141,12 +163,41 @@ router.post('/rides', async (req, res) => {
         service_type: newRide.service_type,
         estimated_duration: newRide.estimated_duration,
         estimated_distance: newRide.estimated_distance,
-        fare: newRide.fare
+        fare: newRide.fare,
+        customer_name: newRide.customer_name,
+        pickup_address: newRide.pickup_address,
+        dropoff_address: newRide.dropoff_address
       }
     });
 
   } catch (error) {
-    console.error('Public create ride error:', error);
+    console.error('❌ PUBLIC CREATE RIDE ERROR:');
+    console.error('Error name:', error.name);
+    console.error('Error message:', error.message);
+    console.error('Error stack:', error.stack);
+    
+    if (error.name === 'SequelizeValidationError') {
+      console.error('Validation errors:', error.errors?.map(e => ({
+        field: e.path,
+        message: e.message,
+        value: e.value
+      })));
+      return res.status(400).json({
+        success: false,
+        message: 'بيانات غير صحيحة',
+        errors: error.errors?.map(e => e.message)
+      });
+    }
+
+    if (error.name === 'SequelizeDatabaseError') {
+      console.error('Database error details:', error.parent?.message || error.original?.message);
+      return res.status(500).json({
+        success: false,
+        message: 'خطأ في قاعدة البيانات',
+        error: process.env.NODE_ENV === 'development' ? error.message : undefined
+      });
+    }
+
     res.status(500).json({
       success: false,
       message: 'فشل في إرسال الطلب. يرجى المحاولة مرة أخرى.',
@@ -155,10 +206,12 @@ router.post('/rides', async (req, res) => {
   }
 });
 
-// Get ride status (public - by phone number) - NOW USING DATABASE
+// Get ride status (public - by phone number)
 router.get('/rides/status/:phone', async (req, res) => {
   try {
     const { phone } = req.params;
+
+    console.log('Getting rides for phone:', phone);
 
     if (!phone) {
       return res.status(400).json({
@@ -167,7 +220,6 @@ router.get('/rides/status/:phone', async (req, res) => {
       });
     }
 
-    // Get rides from DATABASE and filter by phone
     const userRides = await Ride.findAll({
       where: {
         customer_phone: phone
@@ -183,17 +235,22 @@ router.get('/rides/status/:phone', async (req, res) => {
       order: [['created_at', 'DESC']]
     });
 
+    console.log(`Found ${userRides.length} rides for phone ${phone}`);
+
     res.json({
       success: true,
       rides: userRides,
+      count: userRides.length,
       message: userRides.length > 0 ? `تم العثور على ${userRides.length} طلب` : 'لا توجد طلبات مرتبطة بهذا الرقم'
     });
 
   } catch (error) {
     console.error('Get ride status error:', error);
+    console.error('Error stack:', error.stack);
     res.status(500).json({
       success: false,
-      message: 'فشل في جلب حالة الطلب'
+      message: 'فشل في جلب حالة الطلب',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
     });
   }
 });
@@ -203,6 +260,8 @@ router.get('/rides/:id', async (req, res) => {
   try {
     const rideId = parseInt(req.params.id);
     
+    console.log('Getting ride by ID:', rideId);
+
     if (isNaN(rideId)) {
       return res.status(400).json({
         success: false,
@@ -222,11 +281,14 @@ router.get('/rides/:id', async (req, res) => {
     });
 
     if (!ride) {
+      console.log('Ride not found:', rideId);
       return res.status(404).json({
         success: false,
         message: 'الطلب غير موجود'
       });
     }
+
+    console.log('Ride found:', ride.id);
 
     res.json({
       success: true,
@@ -235,11 +297,28 @@ router.get('/rides/:id', async (req, res) => {
 
   } catch (error) {
     console.error('Get ride by ID error:', error);
+    console.error('Error stack:', error.stack);
     res.status(500).json({
       success: false,
-      message: 'فشل في جلب تفاصيل الطلب'
+      message: 'فشل في جلب تفاصيل الطلب',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
     });
   }
+});
+
+// Test endpoint to verify the route is working
+router.get('/test', (req, res) => {
+  res.json({
+    success: true,
+    message: 'Public routes are working',
+    timestamp: new Date().toISOString(),
+    endpoints: {
+      drivers: 'GET /api/public/drivers',
+      createRide: 'POST /api/public/rides',
+      rideStatus: 'GET /api/public/rides/status/:phone',
+      getRide: 'GET /api/public/rides/:id'
+    }
+  });
 });
 
 module.exports = router;
