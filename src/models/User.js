@@ -3,7 +3,9 @@ const { DataTypes } = require('sequelize');
 const bcrypt = require('bcryptjs');
 const sequelize = require('../config/database');
 
-const User = sequelize.define('User', {
+const User = sequelize.define(
+  'User',
+  {
   id: {
     type: DataTypes.INTEGER,
     primaryKey: true,
@@ -180,6 +182,7 @@ const User = sequelize.define('User', {
   }
 }, {
   tableName: 'users',
+  freezeTableName: true,
   timestamps: true, // This will create createdAt and updatedAt automatically
   
   // Model hooks

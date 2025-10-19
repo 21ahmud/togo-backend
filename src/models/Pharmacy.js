@@ -108,7 +108,7 @@ const Pharmacy = sequelize.define('Pharmacy', {
     type: DataTypes.INTEGER,
     allowNull: true,
     references: {
-      model: 'Users',
+      model: 'users',
       key: 'id'
     },
     onUpdate: 'CASCADE',

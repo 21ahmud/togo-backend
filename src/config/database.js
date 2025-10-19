@@ -7,7 +7,7 @@ const isProduction = process.env.NODE_ENV === 'production';
 let sequelize;
 
 if (isProduction) {
-  // ✅ Use Neon PostgreSQL connection in production
+  // ✅ Production: PostgreSQL (Render, Railway, or Neon)
   sequelize = new Sequelize(process.env.DATABASE_URL, {
     dialect: 'postgres',
     protocol: 'postgres',
@@ -28,9 +28,9 @@ if (isProduction) {
     },
   });
 
-  console.log('✅ Connected to Neon PostgreSQL (Production)');
+  console.log('✅ Connected to PostgreSQL (Production)');
 } else {
-  // 🧱 Local SQLite for development
+  // 🧱 Development: Local SQLite
   const projectRoot = path.resolve(__dirname, '../..');
   const dataDir = path.join(projectRoot, 'data');
 
@@ -39,7 +39,7 @@ if (isProduction) {
   }
 
   const dbPath = path.join(dataDir, 'togo_development.sqlite');
-  console.log('🗄️  Local SQLite DB path:', dbPath);
+  console.log('🗄️ Local SQLite DB path:', dbPath);
 
   sequelize = new Sequelize({
     dialect: 'sqlite',

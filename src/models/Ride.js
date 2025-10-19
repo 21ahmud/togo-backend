@@ -80,7 +80,7 @@ const Ride = sequelize.define('Ride', {
     type: DataTypes.INTEGER,
     allowNull: true,
     references: {
-      model: 'Users',
+      model: 'users',
       key: 'id'
     }
   },

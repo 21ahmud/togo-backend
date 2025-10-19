@@ -79,7 +79,7 @@ const MenuItem = sequelize.define('MenuItem', {
     type: DataTypes.INTEGER,
     allowNull: true,
     references: {
-      model: 'Users',
+      model: 'users',
       key: 'id'
     }
   }
