@@ -126,7 +126,13 @@ const initializeDatabase = async () => {
     setupAssociations();
     
     // Sync all models with database
-    await sequelize.sync({ alter: true, force: false });
+    // Use alter: false in production to prevent destructive changes
+    const syncOptions = {
+      alter: process.env.NODE_ENV !== 'production',
+      force: false
+    };
+    
+    await sequelize.sync(syncOptions);
     
     console.log('✅ Database synchronized successfully');
     

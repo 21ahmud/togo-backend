@@ -46,9 +46,12 @@ const User = sequelize.define(
       }
     },
     role: {
-      type: DataTypes.ENUM('customer', 'restaurant', 'pharmacy', 'driver', 'delivery', 'admin'),
+      type: DataTypes.STRING, // Keep as STRING for PostgreSQL compatibility
       allowNull: false,
-      defaultValue: 'customer'
+      defaultValue: 'customer',
+      validate: {
+        isIn: [['customer', 'restaurant', 'pharmacy', 'driver', 'delivery', 'admin']]
+      }
     },
     
     // Status fields
