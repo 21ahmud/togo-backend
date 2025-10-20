@@ -28,13 +28,13 @@ const Ride = sequelize.define('Ride', {
     allowNull: false
   },
   pickup_coordinates: {
-    type: DataTypes.JSON,
-    allowNull: true
-  },
-  dropoff_address: {
-    type: DataTypes.TEXT,
-    allowNull: false
-  },
+  type: DataTypes.STRING,  // ✅ Changed from JSON to STRING
+  allowNull: true
+},
+dropoff_coordinates: {
+  type: DataTypes.STRING,  // ✅ Changed from JSON to STRING
+  allowNull: true
+},
   dropoff_coordinates: {
     type: DataTypes.JSON,
     allowNull: true

@@ -91,15 +91,12 @@ router.post('/', async (req, res) => {
     });
 
   } catch (error) {
-  console.error('Create ride error:', error);
-  console.error('Error details:', error.message);
-  console.error('Error stack:', error.stack);
-  res.status(500).json({
-    success: false,
-    message: 'فشل في إنشاء الطلب',
-    error: process.env.NODE_ENV === 'development' ? error.message : 'خطأ في الخادم'
-  });
-}
+    console.error('Create ride error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'فشل في إنشاء الطلب'
+    });
+  }
 });
 
 // Get all rides - Requires authentication
