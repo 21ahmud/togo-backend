@@ -1,4 +1,4 @@
-// src/models/Ride.js
+// src/models/Ride.js - FIXED VERSION
 const { DataTypes } = require('sequelize');
 const sequelize = require('../config/database');
 
@@ -29,7 +29,7 @@ const Ride = sequelize.define('Ride', {
     allowNull: false
   },
   pickup_coordinates: {
-    type: DataTypes.STRING,  // Changed from JSON to STRING
+    type: DataTypes.STRING, // Changed from JSON to STRING to match your data
     allowNull: true
   },
   dropoff_address: {
@@ -37,7 +37,7 @@ const Ride = sequelize.define('Ride', {
     allowNull: false
   },
   dropoff_coordinates: {
-    type: DataTypes.STRING,  // Changed from JSON to STRING
+    type: DataTypes.STRING, // Changed from JSON to STRING to match your data
     allowNull: true
   },
   ride_type: {
@@ -77,33 +77,24 @@ const Ride = sequelize.define('Ride', {
       isIn: [['pending', 'accepted', 'in_progress', 'completed', 'cancelled']]
     }
   },
-  // Foreign keys for associations
+  // CRITICAL: Match the association foreign keys from models/index.js
   userId: {
     type: DataTypes.INTEGER,
-    allowNull: true,  // Allow null for public bookings
-    field: 'userId',
+    allowNull: true,
     references: {
       model: 'users',
       key: 'id'
-    }
+    },
+    field: 'driver_id' // Maps userId to driver_id column
   },
   driverId: {
     type: DataTypes.INTEGER,
     allowNull: true,
-    field: 'driverId',
     references: {
       model: 'users',
       key: 'id'
-    }
-  },
-  // Legacy fields for backward compatibility
-  driver_id: {
-    type: DataTypes.INTEGER,
-    allowNull: true,
-    references: {
-      model: 'users',
-      key: 'id'
-    }
+    },
+    field: 'driver_id' // Both map to the same column
   },
   driver_name: {
     type: DataTypes.STRING,
@@ -114,7 +105,7 @@ const Ride = sequelize.define('Ride', {
     allowNull: true
   },
   delivery_details: {
-    type: DataTypes.JSON,
+    type: DataTypes.JSONB, // Use JSONB for PostgreSQL
     allowNull: true
   },
   accepted_at: {
@@ -142,7 +133,7 @@ const Ride = sequelize.define('Ride', {
   timestamps: true,
   createdAt: 'created_at',
   updatedAt: 'updated_at',
-  underscored: false
+  underscored: true // This ensures snake_case is used consistently
 });
 
 module.exports = Ride;
