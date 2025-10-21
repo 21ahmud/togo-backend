@@ -85,7 +85,10 @@ const MenuItem = sequelize.define('MenuItem', {
   }
 }, {
   tableName: 'menu_items',
+  underscored: true,  // 🔥 THIS IS THE KEY FIX - Forces snake_case for all columns
   timestamps: true,
+  createdAt: 'createdAt',  // Explicitly map timestamp columns
+  updatedAt: 'updatedAt',
   indexes: [
     {
       fields: ['restaurant_email']
