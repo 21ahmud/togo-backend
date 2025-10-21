@@ -1,4 +1,4 @@
-// src/models/Ride.js - FINAL CORRECTED VERSION
+// src/models/Ride.js - POSTGRESQL CORRECTED VERSION
 const { DataTypes } = require('sequelize');
 const sequelize = require('../config/database');
 
@@ -29,7 +29,7 @@ const Ride = sequelize.define('Ride', {
     allowNull: false
   },
   pickup_coordinates: {
-    type: DataTypes.STRING,
+    type: DataTypes.JSON,  // ✅ CHANGED FROM STRING TO JSON
     allowNull: true
   },
   dropoff_address: {
@@ -37,12 +37,12 @@ const Ride = sequelize.define('Ride', {
     allowNull: false
   },
   dropoff_coordinates: {
-    type: DataTypes.STRING,
+    type: DataTypes.JSON,  // ✅ CHANGED FROM STRING TO JSON
     allowNull: true
   },
   ride_type: {
     type: DataTypes.STRING,
-    allowNull: false,
+    allowNull: true,
     defaultValue: 'standard'
   },
   vehicle_type: {
@@ -97,7 +97,7 @@ const Ride = sequelize.define('Ride', {
     allowNull: true
   },
   delivery_details: {
-    type: sequelize.getDialect() === 'postgres' ? DataTypes.JSONB : DataTypes.JSON,  // ✅ FIXED!
+    type: DataTypes.JSON,  // ✅ JSON for PostgreSQL
     allowNull: true,
     defaultValue: null
   },
