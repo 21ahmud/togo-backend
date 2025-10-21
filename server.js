@@ -111,10 +111,10 @@ app.use('/public', express.static(path.join(__dirname, 'public')));
 
 // Routes
 app.use('/api/auth', authRoutes);
+app.use('/api/public', publicRoutes);        // ✅ PUBLIC FIRST!
 app.use('/api/users', usersRoutes);
 app.use('/api/drivers', driversRoutes);
-app.use('/api/rides', ridesRoutes);
-app.use('/api/public', publicRoutes);
+app.use('/api/rides', ridesRoutes);          // ✅ PROTECTED AFTER PUBLIC
 app.use('/api/deliveries', deliveriesRoutes);
 app.use('/api/delivery', deliveryRoutes);
 app.use('/api/orders', ordersRoutes);
