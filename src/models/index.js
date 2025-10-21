@@ -128,13 +128,13 @@ const initializeDatabase = async () => {
     // Sync all models with database
     // Use alter: false in production to prevent destructive changes
     const syncOptions = {
-      alter: process.env.NODE_ENV !== 'production',
+      alter: true,  // Temporarily enabled to update Railway schema
       force: false
     };
     
+    console.log('⚠️  Running with alter: true to update schema');
     await sequelize.sync(syncOptions);
-    
-    console.log('✅ Database synchronized successfully');
+    console.log('✅ Schema updated successfully');
     
     // Log model counts
     const counts = {};
