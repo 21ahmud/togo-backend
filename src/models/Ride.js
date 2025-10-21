@@ -1,3 +1,4 @@
+// src/models/Ride.js
 const { DataTypes } = require('sequelize');
 const sequelize = require('../config/database');
 
@@ -28,15 +29,15 @@ const Ride = sequelize.define('Ride', {
     allowNull: false
   },
   pickup_coordinates: {
-  type: DataTypes.STRING,  // ✅ Changed from JSON to STRING
-  allowNull: true
-},
-dropoff_coordinates: {
-  type: DataTypes.STRING,  // ✅ Changed from JSON to STRING
-  allowNull: true
-},
+    type: DataTypes.STRING,  // Changed from JSON to STRING
+    allowNull: true
+  },
+  dropoff_address: {
+    type: DataTypes.TEXT,
+    allowNull: false
+  },
   dropoff_coordinates: {
-    type: DataTypes.JSON,
+    type: DataTypes.STRING,  // Changed from JSON to STRING
     allowNull: true
   },
   ride_type: {
@@ -76,6 +77,26 @@ dropoff_coordinates: {
       isIn: [['pending', 'accepted', 'in_progress', 'completed', 'cancelled']]
     }
   },
+  // Foreign keys for associations
+  userId: {
+    type: DataTypes.INTEGER,
+    allowNull: true,  // Allow null for public bookings
+    field: 'userId',
+    references: {
+      model: 'users',
+      key: 'id'
+    }
+  },
+  driverId: {
+    type: DataTypes.INTEGER,
+    allowNull: true,
+    field: 'driverId',
+    references: {
+      model: 'users',
+      key: 'id'
+    }
+  },
+  // Legacy fields for backward compatibility
   driver_id: {
     type: DataTypes.INTEGER,
     allowNull: true,
@@ -120,7 +141,8 @@ dropoff_coordinates: {
   tableName: 'rides',
   timestamps: true,
   createdAt: 'created_at',
-  updatedAt: 'updated_at'
+  updatedAt: 'updated_at',
+  underscored: false
 });
 
 module.exports = Ride;
