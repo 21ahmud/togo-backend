@@ -80,14 +80,27 @@ const MenuItem = sequelize.define('MenuItem', {
   },
   restaurant_id: {
     type: DataTypes.INTEGER,
-    allowNull: true
+    allowNull: true,
+    field: 'restaurant_id'  // ✅ Explicitly map to snake_case column
+  },
+  createdAt: {
+    type: DataTypes.DATE,
+    allowNull: false,
+    defaultValue: DataTypes.NOW,
+    field: 'createdAt'  // ✅ Explicitly map to camelCase column in Neon
+  },
+  updatedAt: {
+    type: DataTypes.DATE,
+    allowNull: false,
+    defaultValue: DataTypes.NOW,
+    field: 'updatedAt'  // ✅ Explicitly map to camelCase column in Neon
   }
 }, {
   tableName: 'menu_items',
-  timestamps: true,  // ✅ Changed to true since Neon has createdAt/updatedAt
-  underscored: false, // ✅ Changed to false since Neon uses camelCase (createdAt, updatedAt)
-  createdAt: 'createdAt',  // ✅ Explicitly map to camelCase
-  updatedAt: 'updatedAt',  // ✅ Explicitly map to camelCase
+  timestamps: true,
+  createdAt: 'createdAt',  // ✅ Tell Sequelize the actual column names
+  updatedAt: 'updatedAt',
+  underscored: false,  // ✅ Don't convert to snake_case
   indexes: [
     { fields: ['restaurant_email'] },
     { fields: ['restaurant_id'] },
