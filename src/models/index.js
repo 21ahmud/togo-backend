@@ -68,10 +68,18 @@ const setupAssociations = () => {
       console.log('  ✓ User-Restaurant associations');
     }
 
-    // Restaurant - MenuItem associations
+    // Restaurant - MenuItem associations ✅ FIXED
     if (Restaurant && MenuItem) {
-      Restaurant.hasMany(MenuItem, { foreignKey: 'restaurantId', as: 'menuItems' });
-      MenuItem.belongsTo(Restaurant, { foreignKey: 'restaurantId', as: 'restaurant' });
+      Restaurant.hasMany(MenuItem, { 
+        foreignKey: 'restaurant_id',  // ✅ Changed from 'restaurantId' to 'restaurant_id'
+        as: 'menuItems',
+        constraints: false  // ✅ Don't enforce FK constraint
+      });
+      MenuItem.belongsTo(Restaurant, { 
+        foreignKey: 'restaurant_id',  // ✅ Changed from 'restaurantId' to 'restaurant_id'
+        as: 'restaurant',
+        constraints: false  // ✅ Don't enforce FK constraint
+      });
       console.log('  ✓ Restaurant-MenuItem associations');
     }
 
@@ -117,7 +125,6 @@ const setupAssociations = () => {
   }
 };
 
-// Initialize database and models
 // Initialize database and models - FIXED VERSION
 const initializeDatabase = async () => {
   try {
@@ -199,7 +206,7 @@ const initializeDatabase = async () => {
   }
 };
 
-// Export models and utilities - NO DELIVERY MODEL
+// Export models and utilities
 module.exports = {
   User: User || {},
   Restaurant: Restaurant || {},
