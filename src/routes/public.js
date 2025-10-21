@@ -1,4 +1,4 @@
-// src/routes/public.js - WORKS WITH BOTH STRING AND JSON TYPES
+// src/routes/public.js - FIXED VERSION WITH BETTER LOGGING
 const express = require('express');
 const router = express.Router();
 const sequelize = require('../config/database');
@@ -49,7 +49,7 @@ router.get('/drivers', async (req, res) => {
   }
 });
 
-// Create ride - UNIVERSAL SOLUTION (works with both STRING and JSON types)
+// Create ride - FIXED VERSION
 router.post('/rides', async (req, res) => {
   console.log('\n========================================');
   console.log('🚗 NEW RIDE REQUEST RECEIVED');
@@ -73,6 +73,16 @@ router.post('/rides', async (req, res) => {
       delivery_details
     } = req.body;
 
+    console.log('📋 Received ride data:', {
+      service_type,
+      customer_name,
+      customer_phone,
+      ride_type,
+      vehicle_type,
+      payment_method,
+      fare
+    });
+
     // Validate required fields
     if (!customer_name || !customer_phone || !pickup_address || !dropoff_address) {
       console.error('❌ Validation failed - missing required fields');
@@ -84,26 +94,21 @@ router.post('/rides', async (req, res) => {
 
     console.log('✅ Validation passed');
 
-    // 🔥 UNIVERSAL COORDINATE HANDLING
-    // Try JSON first, if it fails, use STRING format
+    // Handle coordinates
     let pickupCoordValue = null;
     let dropoffCoordValue = null;
 
-    // Handle pickup coordinates
     if (pickup_coordinates) {
       if (typeof pickup_coordinates === 'object') {
-        // If model expects JSON, this will work
-        pickupCoordValue = pickup_coordinates;
+        pickupCoordValue = JSON.stringify(pickup_coordinates);
       } else if (typeof pickup_coordinates === 'string') {
-        // If model expects STRING, this will work
         pickupCoordValue = pickup_coordinates;
       }
     }
 
-    // Handle dropoff coordinates
     if (dropoff_coordinates) {
       if (typeof dropoff_coordinates === 'object') {
-        dropoffCoordValue = dropoff_coordinates;
+        dropoffCoordValue = JSON.stringify(dropoff_coordinates);
       } else if (typeof dropoff_coordinates === 'string') {
         dropoffCoordValue = dropoff_coordinates;
       }
@@ -113,7 +118,16 @@ router.post('/rides', async (req, res) => {
     console.log('  Pickup:', pickupCoordValue);
     console.log('  Dropoff:', dropoffCoordValue);
 
-    // Create ride using RAW SQL to bypass Sequelize type checking
+    // IMPORTANT: Make sure ride_type and vehicle_type are stored correctly
+    const finalRideType = ride_type || 'standard';
+    const finalVehicleType = vehicle_type || 'car';
+
+    console.log('🚙 Vehicle info:', {
+      ride_type: finalRideType,
+      vehicle_type: finalVehicleType
+    });
+
+    // Create ride using RAW SQL
     const query = `
       INSERT INTO rides (
         service_type, customer_name, customer_phone,
@@ -122,23 +136,26 @@ router.post('/rides', async (req, res) => {
         ride_type, vehicle_type, payment_method,
         estimated_distance, estimated_duration, fare,
         status, ride_started, ride_completed,
+        delivery_details,
         created_at, updated_at
       ) VALUES (
         $1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
-        $11, $12, $13, $14, $15, $16, $17, $18
+        $11, $12, $13, $14, $15, $16, $17, $18, $19
       ) RETURNING *
     `;
+
+    const deliveryDetailsJson = delivery_details ? JSON.stringify(delivery_details) : null;
 
     const values = [
       service_type || 'ride',
       customer_name.trim(),
       customer_phone.trim(),
       pickup_address.trim(),
-      pickupCoordValue ? JSON.stringify(pickupCoordValue) : null,
+      pickupCoordValue,
       dropoff_address.trim(),
-      dropoffCoordValue ? JSON.stringify(dropoffCoordValue) : null,
-      ride_type || 'standard',
-      vehicle_type || 'car',
+      dropoffCoordValue,
+      finalRideType,
+      finalVehicleType,
       payment_method || 'cash',
       estimated_distance || '0 km',
       estimated_duration || '0 min',
@@ -146,9 +163,12 @@ router.post('/rides', async (req, res) => {
       'pending',
       false,
       false,
+      deliveryDetailsJson,
       new Date(),
       new Date()
     ];
+
+    console.log('💾 Inserting ride with values:', values);
 
     const [result] = await sequelize.query(query, {
       bind: values,
@@ -160,6 +180,9 @@ router.post('/rides', async (req, res) => {
     console.log('========================================');
     console.log('✅ RIDE CREATED SUCCESSFULLY');
     console.log('🆔 Ride ID:', newRide.id);
+    console.log('🚙 Ride Type:', newRide.ride_type);
+    console.log('🚗 Vehicle Type:', newRide.vehicle_type);
+    console.log('📊 Status:', newRide.status);
     console.log('========================================\n');
 
     res.status(201).json({
