@@ -107,7 +107,7 @@ const setupAssociations = () => {
       });
       Restaurant.belongsTo(User, { 
         foreignKey: 'user_id', 
-        as: 'owner' 
+        as: 'restaurantOwner' 
       });
       console.log('  ✓ User-Restaurant associations');
     }
@@ -121,7 +121,7 @@ const setupAssociations = () => {
       });
       Pharmacy.belongsTo(User, { 
         foreignKey: 'userId', 
-        as: 'owner' 
+        as: 'pharmacyOwner' 
       });
       console.log('  ✓ User-Pharmacy associations');
     }
@@ -244,7 +244,7 @@ const closeConnection = async () => {
   }
 };
 
-// Export models and utilities
+// Export models and utilities - NO DELIVERY MODEL
 module.exports = {
   // Models
   User: User || {},
