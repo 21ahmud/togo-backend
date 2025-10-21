@@ -1,12 +1,17 @@
-// src/routes/public.js - SQLite COMPATIBLE VERSION
+// src/routes/public.js - UNIVERSAL VERSION (SQLite + PostgreSQL)
 const express = require('express');
 const router = express.Router();
-const { QueryTypes } = require('sequelize');
 const sequelize = require('../config/database');
 
 // Import models
 const User = require('../models/User');
 const Ride = require('../models/Ride');
+
+// Detect database dialect
+const isPostgres = sequelize.getDialect() === 'postgres';
+const isSQLite = sequelize.getDialect() === 'sqlite';
+
+console.log(`🗄️  Database dialect: ${sequelize.getDialect()}`);
 
 // Test route
 router.get('/test', (req, res) => {
@@ -14,6 +19,7 @@ router.get('/test', (req, res) => {
   res.json({
     success: true,
     message: 'Public routes working',
+    database: sequelize.getDialect(),
     timestamp: new Date().toISOString()
   });
 });
@@ -50,12 +56,13 @@ router.get('/drivers', async (req, res) => {
   }
 });
 
-// Create ride using RAW SQL (SQLite Compatible)
+// Create ride using Sequelize ORM (works with both databases)
 router.post('/rides', async (req, res) => {
   console.log('\n========================================');
   console.log('🚗 NEW RIDE REQUEST RECEIVED');
   console.log('========================================');
   console.log('📅 Timestamp:', new Date().toISOString());
+  console.log('🗄️  Database:', sequelize.getDialect());
   console.log('📦 Request Body:', JSON.stringify(req.body, null, 2));
   
   try {
@@ -86,81 +93,32 @@ router.post('/rides', async (req, res) => {
     }
 
     console.log('✅ Validation passed');
-    console.log('📝 Preparing SQL insert...');
+    console.log('📝 Creating ride using Sequelize ORM...');
 
-    // Get current timestamp in ISO format for SQLite
-    const currentTimestamp = new Date().toISOString();
-
-    // SQLite uses ? placeholders, not $1, $2
-    // SQLite doesn't have NOW() function - use datetime('now') or pass JavaScript Date
-    const query = `
-      INSERT INTO rides (
-        service_type, customer_name, customer_phone,
-        pickup_address, pickup_coordinates,
-        dropoff_address, dropoff_coordinates,
-        ride_type, vehicle_type, payment_method,
-        estimated_distance, estimated_duration, fare,
-        status, driver_id, driver_name, driver_phone,
-        delivery_details, ride_started, ride_completed,
-        created_at, updated_at
-      ) VALUES (
-        ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-        ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-        ?, ?
-      )
-    `;
-
-    const values = [
-      service_type || 'ride',                     // 1
-      customer_name.trim(),                        // 2
-      customer_phone.trim(),                       // 3
-      pickup_address.trim(),                       // 4
-      pickup_coordinates || null,                  // 5
-      dropoff_address.trim(),                      // 6
-      dropoff_coordinates || null,                 // 7
-      ride_type || 'standard',                     // 8
-      vehicle_type || 'car',                       // 9
-      payment_method || 'cash',                    // 10
-      estimated_distance || '0 km',                // 11
-      estimated_duration || '0 min',               // 12
-      parseFloat(fare) || 0,                       // 13
-      'pending',                                   // 14 - status
-      null,                                        // 15 - driver_id
-      null,                                        // 16 - driver_name
-      null,                                        // 17 - driver_phone
-      delivery_details ? JSON.stringify(delivery_details) : null, // 18
-      0,                                           // 19 - ride_started (SQLite boolean as 0/1)
-      0,                                           // 20 - ride_completed
-      currentTimestamp,                            // 21 - created_at
-      currentTimestamp                             // 22 - updated_at
-    ];
-
-    console.log('🔧 SQL Query prepared for SQLite');
-    console.log('📊 Values count:', values.length);
-
-    // Execute the raw SQL query
-    await sequelize.query(query, {
-      replacements: values,
-      type: QueryTypes.INSERT
+    // Use Sequelize ORM - works with both SQLite and PostgreSQL
+    const newRide = await Ride.create({
+      service_type: service_type || 'ride',
+      customer_name: customer_name.trim(),
+      customer_phone: customer_phone.trim(),
+      pickup_address: pickup_address.trim(),
+      pickup_coordinates: pickup_coordinates || null,
+      dropoff_address: dropoff_address.trim(),
+      dropoff_coordinates: dropoff_coordinates || null,
+      ride_type: ride_type || 'standard',
+      vehicle_type: vehicle_type || 'car',
+      payment_method: payment_method || 'cash',
+      estimated_distance: estimated_distance || '0 km',
+      estimated_duration: estimated_duration || '0 min',
+      fare: parseFloat(fare) || 0,
+      status: 'pending',
+      driver_id: null,
+      driver_name: null,
+      driver_phone: null,
+      delivery_details: delivery_details || null,
+      ride_started: false,
+      ride_completed: false
     });
 
-    // Get the last inserted ID (SQLite specific)
-    const [result] = await sequelize.query(
-      'SELECT last_insert_rowid() as id',
-      { type: QueryTypes.SELECT }
-    );
-    
-    const newRideId = result.id;
-
-    // Fetch the created ride
-    const [newRide] = await sequelize.query(
-      `SELECT * FROM rides WHERE id = ?`,
-      {
-        replacements: [newRideId],
-        type: QueryTypes.SELECT
-      }
-    );
-    
     console.log('========================================');
     console.log('✅ RIDE CREATED SUCCESSFULLY');
     console.log('========================================');
@@ -168,6 +126,8 @@ router.post('/rides', async (req, res) => {
     console.log('👤 Customer:', newRide.customer_name);
     console.log('📞 Phone:', newRide.customer_phone);
     console.log('🚀 Service Type:', newRide.service_type);
+    console.log('🚗 Ride Type:', newRide.ride_type);
+    console.log('🚙 Vehicle Type:', newRide.vehicle_type);
     console.log('💰 Fare:', newRide.fare);
     console.log('📍 Status:', newRide.status);
     console.log('========================================\n');
@@ -198,12 +158,19 @@ router.post('/rides', async (req, res) => {
     console.error('Error Message:', error.message);
     
     if (error.original) {
-      console.error('Original Error:', error.original.message);
+      console.error('Original Error:', error.original.message || error.original);
       console.error('SQL State:', error.original.code);
     }
     
     if (error.sql) {
       console.error('Failed SQL:', error.sql);
+    }
+    
+    if (error.errors && error.errors.length > 0) {
+      console.error('Validation Errors:');
+      error.errors.forEach(err => {
+        console.error(`  - ${err.path}: ${err.message}`);
+      });
     }
     
     console.error('Stack Trace:', error.stack);
@@ -212,9 +179,10 @@ router.post('/rides', async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'فشل في إرسال الطلب. يرجى المحاولة مرة أخرى.',
-      ...(process.env.NODE_ENV === 'development' && {
+      ...(process.env.NODE_ENV !== 'production' && {
         error: error.message,
-        errorType: error.name
+        errorType: error.name,
+        details: error.errors?.map(e => ({ field: e.path, message: e.message }))
       })
     });
   }
@@ -225,17 +193,14 @@ router.get('/rides', async (req, res) => {
   try {
     console.log('📋 Fetching all rides...');
     
-    const query = `
-      SELECT id, service_type, customer_name, customer_phone,
-             pickup_address, dropoff_address, fare, status,
-             created_at, updated_at
-      FROM rides
-      ORDER BY created_at DESC
-      LIMIT 50
-    `;
-    
-    const rides = await sequelize.query(query, {
-      type: QueryTypes.SELECT
+    const rides = await Ride.findAll({
+      attributes: [
+        'id', 'service_type', 'customer_name', 'customer_phone',
+        'pickup_address', 'dropoff_address', 'ride_type', 'vehicle_type',
+        'fare', 'status', 'created_at', 'updated_at'
+      ],
+      order: [['created_at', 'DESC']],
+      limit: 50
     });
 
     console.log(`✅ Retrieved ${rides.length} rides`);
@@ -250,7 +215,8 @@ router.get('/rides', async (req, res) => {
     console.error('❌ Get rides error:', error.message);
     res.status(500).json({
       success: false,
-      message: 'فشل في جلب الطلبات'
+      message: 'فشل في جلب الطلبات',
+      error: error.message
     });
   }
 });
@@ -260,13 +226,7 @@ router.get('/rides/:id', async (req, res) => {
   try {
     const rideId = parseInt(req.params.id);
     
-    const [ride] = await sequelize.query(
-      `SELECT * FROM rides WHERE id = ?`,
-      {
-        replacements: [rideId],
-        type: QueryTypes.SELECT
-      }
-    );
+    const ride = await Ride.findByPk(rideId);
 
     if (!ride) {
       return res.status(404).json({
@@ -284,7 +244,8 @@ router.get('/rides/:id', async (req, res) => {
     console.error('❌ Get ride error:', error.message);
     res.status(500).json({
       success: false,
-      message: 'فشل في جلب تفاصيل الطلب'
+      message: 'فشل في جلب تفاصيل الطلب',
+      error: error.message
     });
   }
 });
