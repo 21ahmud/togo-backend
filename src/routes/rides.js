@@ -1,4 +1,4 @@
-// src/routes/rides.js - FIXED FOR DRIVER DASHBOARD
+// src/routes/rides.js - COMPLETE FIX FOR DRIVER DASHBOARD
 const express = require('express');
 const { Op } = require('sequelize');
 const User = require('../models/User');
@@ -22,68 +22,130 @@ router.get('/test', async (req, res) => {
       success: true,
       message: 'Rides route is working (database not connected)',
       timestamp: new Date().toISOString(),
-      totalRides: 0
+      totalRides: 0,
+      error: error.message
     });
   }
 });
 
-// Get all rides - Requires authentication - FIXED VERSION
+// Get all rides - COMPLETELY REWRITTEN FOR BETTER ERROR HANDLING
 router.get('/', auth, async (req, res) => {
   try {
-    console.log('Fetching rides for user:', req.user.id, 'role:', req.user.role);
+    console.log('========================================');
+    console.log('📋 FETCHING RIDES');
+    console.log('User ID:', req.user.id);
+    console.log('User Role:', req.user.role);
+    console.log('User Phone:', req.user.phone);
+    console.log('========================================');
 
     let whereClause = {};
     
     if (req.user.role === 'driver') {
-      // Drivers see: their assigned rides + pending rides
-      whereClause = {
-        [Op.or]: [
-          { driver_id: req.user.id },
-          { 
-            status: 'pending',
-            driver_id: null
-          }
-        ]
-      };
-    } else if (req.user.role === 'admin') {
-      // Admins see all rides
-    } else {
-      // Regular customers see their own rides
-      whereClause = {
-        customer_phone: req.user.phone
-      };
-    }
-
-    // Fetch rides WITHOUT associations to avoid errors
-    const allRides = await Ride.findAll({
-      where: whereClause,
-      order: [['created_at', 'DESC']],
-      raw: true // Return plain objects, no associations
-    });
-
-    // If driver is assigned, manually fetch driver details
-    const ridesWithDriverInfo = await Promise.all(
-      allRides.map(async (ride) => {
+      // Fetch all rides first, then filter in JavaScript to avoid SQL dialect issues
+      const allDriverRides = await Ride.findAll({
+        order: [['created_at', 'DESC']],
+        raw: true
+      });
+      
+      console.log(`🚗 Total rides in database: ${allDriverRides.length}`);
+      
+      // Filter: rides assigned to this driver OR pending rides with no driver
+      const filteredRides = allDriverRides.filter(ride => {
+        const isAssignedToDriver = ride.driver_id === req.user.id;
+        const isPendingUnassigned = ride.status === 'pending' && (!ride.driver_id || ride.driver_id === null);
+        return isAssignedToDriver || isPendingUnassigned;
+      });
+      
+      console.log(`✅ Filtered to ${filteredRides.length} rides for driver ${req.user.id}`);
+      console.log('  - Assigned rides:', filteredRides.filter(r => r.driver_id === req.user.id).length);
+      console.log('  - Available rides:', filteredRides.filter(r => r.status === 'pending' && !r.driver_id).length);
+      
+      // Process driver info
+      const ridesWithDriverInfo = [];
+      for (const ride of filteredRides) {
+        let rideWithDriver = { ...ride };
+        
         if (ride.driver_id) {
           try {
             const driver = await User.findByPk(ride.driver_id, {
               attributes: ['id', 'name', 'phone', 'vehicle'],
               raw: true
             });
-            return {
-              ...ride,
-              driver: driver || null
-            };
+            
+            if (driver) {
+              rideWithDriver.driver = driver;
+            }
           } catch (err) {
-            console.error('Error fetching driver for ride:', ride.id, err);
-            return ride;
+            console.error(`❌ Error fetching driver for ride ${ride.id}:`, err.message);
           }
         }
-        return ride;
-      })
-    );
+        
+        ridesWithDriverInfo.push(rideWithDriver);
+      }
 
-    console.log(`Returning ${ridesWithDriverInfo.length} rides for user role: ${req.user.role}`);
+      console.log('========================================');
+      console.log(`✅ RETURNING ${ridesWithDriverInfo.length} RIDES`);
+      console.log('========================================\n');
+
+      return res.json({
+        success: true,
+        rides: ridesWithDriverInfo,
+        count: ridesWithDriverInfo.length
+      });
+    } else if (req.user.role === 'admin') {
+      // Admins see all rides
+      console.log('👑 Admin query - fetching all rides');
+    } else {
+      // Regular customers see their own rides
+      whereClause = {
+        customer_phone: req.user.phone
+      };
+      console.log('👤 Customer query - phone:', req.user.phone);
+    }
+
+    console.log('Final whereClause:', JSON.stringify(whereClause, null, 2));
+
+    // Fetch rides WITHOUT associations
+    const allRides = await Ride.findAll({
+      where: whereClause,
+      order: [['created_at', 'DESC']],
+      raw: true
+    });
+
+    console.log(`✅ Found ${allRides.length} rides in database`);
+
+    if (allRides.length > 0) {
+      console.log('Sample ride:', JSON.stringify(allRides[0], null, 2));
+    }
+
+    // Manually fetch driver details if assigned
+    const ridesWithDriverInfo = [];
+    
+    for (const ride of allRides) {
+      let rideWithDriver = { ...ride };
+      
+      if (ride.driver_id) {
+        try {
+          const driver = await User.findByPk(ride.driver_id, {
+            attributes: ['id', 'name', 'phone', 'vehicle'],
+            raw: true
+          });
+          
+          if (driver) {
+            rideWithDriver.driver = driver;
+            console.log(`✅ Fetched driver info for ride ${ride.id}:`, driver.name);
+          }
+        } catch (err) {
+          console.error(`❌ Error fetching driver for ride ${ride.id}:`, err.message);
+        }
+      }
+      
+      ridesWithDriverInfo.push(rideWithDriver);
+    }
+
+    console.log('========================================');
+    console.log(`✅ RETURNING ${ridesWithDriverInfo.length} RIDES`);
+    console.log('========================================\n');
 
     res.json({
       success: true,
@@ -92,15 +154,21 @@ router.get('/', auth, async (req, res) => {
     });
 
   } catch (error) {
-    console.error('Get rides error:', error);
+    console.log('========================================');
+    console.error('❌ GET RIDES ERROR');
+    console.error('Error name:', error.name);
+    console.error('Error message:', error.message);
     console.error('Error stack:', error.stack);
+    console.log('========================================\n');
+    
     res.status(500).json({
       success: false,
       message: 'فشل في جلب الطلبات',
-      ...(process.env.NODE_ENV === 'development' && {
-        error: error.message,
+      error: process.env.NODE_ENV === 'development' ? {
+        name: error.name,
+        message: error.message,
         stack: error.stack
-      })
+      } : undefined
     });
   }
 });
@@ -111,16 +179,26 @@ router.put('/:id', auth, async (req, res) => {
     const rideId = parseInt(req.params.id);
     const updates = req.body;
 
-    console.log('Updating ride:', rideId, 'by user:', req.user.id, 'updates:', updates);
+    console.log('========================================');
+    console.log('🔄 UPDATING RIDE');
+    console.log('Ride ID:', rideId);
+    console.log('User ID:', req.user.id);
+    console.log('User Role:', req.user.role);
+    console.log('Updates:', JSON.stringify(updates, null, 2));
+    console.log('========================================');
 
     const ride = await Ride.findByPk(rideId);
     
     if (!ride) {
+      console.log('❌ Ride not found');
       return res.status(404).json({
         success: false,
         message: 'الطلب غير موجود'
       });
     }
+
+    console.log('Current ride status:', ride.status);
+    console.log('Current driver_id:', ride.driver_id);
 
     // Permission checks
     if (req.user.role === 'driver') {
@@ -129,17 +207,23 @@ router.put('/:id', auth, async (req, res) => {
         // Driver accepting a ride
         const driver = await User.findByPk(req.user.id);
         if (!driver) {
+          console.log('❌ Driver profile not found');
           return res.status(403).json({
             success: false,
             message: 'بيانات السائق غير موجودة'
           });
         }
+        
+        console.log('✅ Driver accepting ride:', driver.name);
+        
         // Add driver info to updates
         updates.driver_id = req.user.id;
         updates.driver_name = driver.name;
         updates.driver_phone = driver.phone;
+        updates.accepted_at = new Date();
       } else if (ride.driver_id && ride.driver_id !== req.user.id) {
         // Driver trying to update someone else's ride
+        console.log('❌ Permission denied - different driver');
         return res.status(403).json({
           success: false,
           message: 'لا يمكنك تعديل طلب سائق آخر'
@@ -147,6 +231,7 @@ router.put('/:id', auth, async (req, res) => {
       }
     } else if (req.user.role !== 'admin') {
       // Regular users can't update rides
+      console.log('❌ Permission denied - not admin or driver');
       return res.status(403).json({
         success: false,
         message: 'غير مُخوَّل لتعديل الطلبات'
@@ -157,11 +242,10 @@ router.put('/:id', auth, async (req, res) => {
     await ride.update(updates);
     await ride.reload();
 
-    console.log('Ride updated successfully:', {
-      id: ride.id,
-      status: ride.status,
-      driver_id: ride.driver_id
-    });
+    console.log('✅ Ride updated successfully');
+    console.log('New status:', ride.status);
+    console.log('New driver_id:', ride.driver_id);
+    console.log('========================================\n');
 
     res.json({
       success: true,
@@ -170,10 +254,11 @@ router.put('/:id', auth, async (req, res) => {
     });
 
   } catch (error) {
-    console.error('Update ride error:', error);
+    console.error('❌ Update ride error:', error);
     res.status(500).json({
       success: false,
-      message: 'فشل في تحديث الطلب'
+      message: 'فشل في تحديث الطلب',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
     });
   }
 });
