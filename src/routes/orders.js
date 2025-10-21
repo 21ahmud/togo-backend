@@ -1,4 +1,3 @@
-// routes/orders.js - Complete Fixed Version
 const express = require('express');
 const router = express.Router();
 const Order = require('../models/Order');
@@ -37,7 +36,7 @@ const notifyDeliveryDrivers = async (order) => {
       customer_location: order.address,
       total: parseFloat(order.total),
       delivery_fee: parseFloat(order.delivery_fee || 0),
-      restaurants: order.restaurants ? (typeof order.restaurants === 'string' ? JSON.parse(order.restaurants) : order.restaurants) : [],
+      restaurants: typeof order.restaurants === 'string' ? JSON.parse(order.restaurants) : (order.restaurants || []),
       created_at: new Date(),
       read: false,
       priority: order.priority || 'normal'
@@ -68,9 +67,8 @@ const notifyDeliveryDrivers = async (order) => {
   }
 };
 
-// Debug endpoints
 router.get('/debug/all-orders-detailed', async (req, res) => {
-  if (process.env.NODE_ENV !== 'development' && process.env.NODE_ENV !== 'production') {
+  if (process.env.NODE_ENV !== 'development') {
     return res.status(404).json({ message: 'Not found' });
   }
   
@@ -134,6 +132,10 @@ router.get('/debug/all-orders-detailed', async (req, res) => {
 });
 
 router.post('/debug/create-test-order', authenticateToken, async (req, res) => {
+  if (process.env.NODE_ENV !== 'development') {
+    return res.status(404).json({ message: 'Not found' });
+  }
+  
   try {
     console.log('[DEBUG] Creating test order for user:', req.user.id);
     
@@ -200,6 +202,10 @@ router.post('/debug/create-test-order', authenticateToken, async (req, res) => {
 });
 
 router.get('/debug/all-orders', async (req, res) => {
+  if (process.env.NODE_ENV !== 'development') {
+    return res.status(404).json({ message: 'Not found' });
+  }
+  
   try {
     console.log('[DEBUG] Fetching all recent orders...');
     
@@ -273,7 +279,8 @@ router.get('/debug/all-orders', async (req, res) => {
   }
 });
 
-// ✅ MAIN POST ROUTE - CRITICAL FIX
+// In your orders.js route file, update the POST endpoint:
+
 router.post('/', authenticateToken, async (req, res) => {
   try {
     console.log('[ORDER CREATE] =================================');
@@ -308,20 +315,14 @@ router.post('/', authenticateToken, async (req, res) => {
     } = req.body;
 
     // Log received data
-    console.log('[ORDER CREATE] Received data:', {
-      items_type: typeof items,
-      items_is_array: Array.isArray(items),
-      items_length: items?.length,
-      items_sample: items?.[0],
-      restaurants_type: typeof restaurants,
-      restaurants_is_array: Array.isArray(restaurants),
-      restaurants_length: restaurants?.length,
-      restaurants_sample: restaurants?.[0]
-    });
+    console.log('[ORDER CREATE] Received items:', items);
+    console.log('[ORDER CREATE] Received restaurants:', restaurants);
+    console.log('[ORDER CREATE] Items is array:', Array.isArray(items));
+    console.log('[ORDER CREATE] Restaurants is array:', Array.isArray(restaurants));
 
     const actualUserId = user_id || req.user.id;
 
-    // Validation
+    // Validation...
     const validationErrors = [];
     
     if (!actualUserId) validationErrors.push('معرف المستخدم مطلوب');
@@ -341,25 +342,25 @@ router.post('/', authenticateToken, async (req, res) => {
       });
     }
 
-    // ✅ CRITICAL FIX: Stringify arrays BEFORE passing to Sequelize
+    // Prepare order data - make sure we're passing arrays directly
     const orderData = {
       user_id: parseInt(actualUserId),
       customer_name: customer_name.trim(),
       customer_phone: customer_phone.trim(),
       address: address.trim(),
-      customer_location: req.body.customer_location ? JSON.stringify(req.body.customer_location) : null,
-      // ✅ Stringify items array manually
-      items: JSON.stringify(Array.isArray(items) ? items : []),
-      // ✅ Stringify restaurants array manually
-      restaurants: JSON.stringify(Array.isArray(restaurants) ? restaurants : []),
+      customer_location: req.body.customer_location || null,
+      // Pass items as array - the model's setter will handle stringification
+      items: Array.isArray(items) ? items : [],
+      // Pass restaurants as array - the model's setter will handle stringification
+      restaurants: Array.isArray(restaurants) ? restaurants : [],
       subtotal: parseFloat(subtotal),
       delivery_fee: parseFloat(delivery_fee || 0),
       total: parseFloat(total),
       status: 'pending_assignment',
       payment_method,
       type,
-      // ✅ Stringify restaurant_emails array manually
-      restaurant_emails: JSON.stringify(Array.isArray(restaurant_emails) ? restaurant_emails : []),
+      // Pass restaurant_emails as array
+      restaurant_emails: Array.isArray(restaurant_emails) ? restaurant_emails : [],
       locationAccuracy: req.body.locationAccuracy || null,
       hasAccurateLocation: req.body.hasAccurateLocation || false,
       estimated_delivery_time: parseInt(req.body.estimated_delivery_time || 30),
@@ -370,37 +371,32 @@ router.post('/', authenticateToken, async (req, res) => {
       updated_at: new Date()
     };
 
-    console.log('[ORDER CREATE] Order data prepared (all fields stringified):', {
+    console.log('[ORDER CREATE] Order data before create:', {
       items_type: typeof orderData.items,
-      items_length: orderData.items.length,
-      items_preview: orderData.items.substring(0, 150) + '...',
+      items_is_array: Array.isArray(orderData.items),
+      items_count: orderData.items.length,
       restaurants_type: typeof orderData.restaurants,
-      restaurants_preview: orderData.restaurants.substring(0, 150) + '...'
+      restaurants_is_array: Array.isArray(orderData.restaurants),
+      restaurants_count: orderData.restaurants.length
     });
 
     let newOrder;
     try {
-      console.log('[ORDER CREATE] Calling Order.create()...');
       newOrder = await Order.create(orderData);
       console.log('[ORDER CREATE] Order created successfully:', {
         id: newOrder.id,
         status: newOrder.status,
         customer_name: newOrder.customer_name,
         total: newOrder.total,
-        items_stored_type: typeof newOrder.items,
-        restaurants_stored_type: typeof newOrder.restaurants
+        items_stored: newOrder.items,
+        restaurants_stored: newOrder.restaurants
       });
     } catch (createError) {
       console.error('[ORDER CREATE] Order creation failed:', createError);
-      console.error('[ORDER CREATE] Error details:', {
-        message: createError.message,
-        name: createError.name,
-        errors: createError.errors,
-        sql: createError.sql
-      });
       throw createError;
     }
     
+    // Verify the order was created correctly
     const orderId = parseInt(newOrder.id);
     
     // Notify delivery drivers
@@ -412,33 +408,17 @@ router.post('/', authenticateToken, async (req, res) => {
       console.warn('[ORDER CREATE] Failed to notify drivers:', notifyError.message);
     }
 
-    // ✅ Parse back to arrays for response
-    let parsedItems = [];
-    let parsedRestaurants = [];
-    
-    try {
-      parsedItems = JSON.parse(newOrder.items);
-    } catch (e) {
-      console.error('[ORDER CREATE] Failed to parse items:', e);
-      parsedItems = [];
-    }
-    
-    try {
-      parsedRestaurants = JSON.parse(newOrder.restaurants);
-    } catch (e) {
-      console.error('[ORDER CREATE] Failed to parse restaurants:', e);
-      parsedRestaurants = [];
-    }
-
+    // Prepare response - parse items and restaurants from stored format
     const orderResponse = {
       id: orderId,
       user_id: newOrder.user_id,
       customer_name: newOrder.customer_name,
       customer_phone: newOrder.customer_phone,
       address: newOrder.address,
-      customer_location: newOrder.customer_location ? JSON.parse(newOrder.customer_location) : null,
-      items: parsedItems,
-      restaurants: parsedRestaurants,
+      customer_location: newOrder.customer_location,
+      // The model getter should return parsed arrays
+      items: newOrder.items,
+      restaurants: newOrder.restaurants,
       subtotal: parseFloat(newOrder.subtotal),
       delivery_fee: parseFloat(newOrder.delivery_fee),
       total: parseFloat(newOrder.total),
@@ -451,9 +431,9 @@ router.post('/', authenticateToken, async (req, res) => {
       priority: newOrder.priority
     };
 
+    console.log('[ORDER CREATE] Response items:', orderResponse.items);
+    console.log('[ORDER CREATE] Response restaurants:', orderResponse.restaurants);
     console.log('[ORDER CREATE] SUCCESS - Returning response for order:', orderId);
-    console.log('[ORDER CREATE] Response items count:', orderResponse.items.length);
-    console.log('[ORDER CREATE] Response restaurants count:', orderResponse.restaurants.length);
 
     res.status(201).json({
       success: true,
@@ -463,20 +443,17 @@ router.post('/', authenticateToken, async (req, res) => {
 
   } catch (error) {
     console.error('[ORDER CREATE] FATAL ERROR:', error);
-    console.error('[ORDER CREATE] Error stack:', error.stack);
     res.status(500).json({
       success: false,
       message: 'فشل في إنشاء الطلب',
       error: process.env.NODE_ENV === 'development' ? {
         message: error.message,
-        stack: error.stack,
-        name: error.name
+        stack: error.stack
       } : 'خطأ داخلي في الخادم'
     });
   }
 });
 
-// GET all orders
 router.get('/', authenticateToken, async (req, res) => {
   try {
     const { 
@@ -667,7 +644,18 @@ router.get('/', authenticateToken, async (req, res) => {
         limit: parseInt(limit),
         offset: parseInt(offset),
         has_more: transformedOrders.length === parseInt(limit)
-      }
+      },
+      debug_info: process.env.NODE_ENV === 'development' ? {
+        query_params: req.query,
+        where_clause: whereClause,
+        status_breakdown: statusBreakdown,
+        raw_count: orders.length,
+        filtered_count: transformedOrders.length,
+        user_info: {
+          id: req.user?.id,
+          role: req.user?.role
+        }
+      } : undefined
     });
   } catch (error) {
     console.error('[ORDER FETCH] Error fetching orders:', error);
@@ -679,7 +667,6 @@ router.get('/', authenticateToken, async (req, res) => {
   }
 });
 
-// UPDATE order
 router.put('/:id', authenticateToken, async (req, res) => {
   try {
     const orderId = req.params.id;
@@ -862,7 +849,6 @@ router.put('/:id', authenticateToken, async (req, res) => {
   }
 });
 
-// GET single order
 router.get('/:id', authenticateToken, async (req, res) => {
   try {
     const orderId = req.params.id;
@@ -928,7 +914,6 @@ router.get('/:id', authenticateToken, async (req, res) => {
   }
 });
 
-// Notifications endpoints
 router.get('/notifications/:driverId', authenticateToken, async (req, res) => {
   try {
     const driverId = parseInt(req.params.driverId);
@@ -976,6 +961,10 @@ router.put('/notifications/:driverId/:notificationId/read', authenticateToken, a
 });
 
 router.get('/debug/recent', async (req, res) => {
+  if (process.env.NODE_ENV !== 'development') {
+    return res.status(404).json({ message: 'Not found' });
+  }
+  
   try {
     const recentOrders = await Order.findAll({
       order: [['created_at', 'DESC']],
@@ -1000,7 +989,6 @@ router.get('/debug/recent', async (req, res) => {
   }
 });
 
-// Delivery dashboard stats
 router.get('/stats/delivery-dashboard', authenticateToken, requireRole(['delivery', 'admin']), async (req, res) => {
   try {
     const { delivery_id } = req.query;

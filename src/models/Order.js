@@ -79,23 +79,29 @@ const Order = sequelize.define('Order', {
   },
   
   items: {
-  type: DataTypes.TEXT,
-  allowNull: false,
-  validate: {
-    notEmpty: true
-  },
-  get() {
-    const value = this.getDataValue('items');
-    if (!value) return [];
-    try {
-      const parsed = JSON.parse(value);
-      return Array.isArray(parsed) ? parsed : [];
-    } catch (e) {
-      console.error('Error parsing items JSON:', e);
-      return [];
+    type: DataTypes.TEXT,
+    allowNull: false,
+    validate: {
+      notEmpty: true
+    },
+    get() {
+      const value = this.getDataValue('items');
+      if (!value) return [];
+      try {
+        const parsed = JSON.parse(value);
+        return Array.isArray(parsed) ? parsed : [];
+      } catch (e) {
+        console.error('Error parsing items JSON:', e);
+        return [];
+      }
+    },
+    set(value) {
+      if (Array.isArray(value)) {
+        this.setDataValue('items', JSON.stringify(value));
+      } else {
+        this.setDataValue('items', JSON.stringify([]));
+      }
     }
-  },
-    
   },
   
   restaurants: {
