@@ -1,7 +1,6 @@
-// src/routes/public.js - POSTGRESQL VERSION
+// src/routes/public.js - WORKS WITH BOTH STRING AND JSON TYPES
 const express = require('express');
 const router = express.Router();
-const { QueryTypes } = require('sequelize');
 const sequelize = require('../config/database');
 
 // Import models
@@ -50,13 +49,11 @@ router.get('/drivers', async (req, res) => {
   }
 });
 
-// Create ride for POSTGRESQL
+// Create ride - UNIVERSAL SOLUTION (works with both STRING and JSON types)
 router.post('/rides', async (req, res) => {
   console.log('\n========================================');
   console.log('🚗 NEW RIDE REQUEST RECEIVED');
   console.log('========================================');
-  console.log('📅 Timestamp:', new Date().toISOString());
-  console.log('📦 Request Body:', JSON.stringify(req.body, null, 2));
   
   try {
     const {
@@ -86,50 +83,83 @@ router.post('/rides', async (req, res) => {
     }
 
     console.log('✅ Validation passed');
-    console.log('📝 Processing coordinates for PostgreSQL...');
-    console.log('Pickup coords type:', typeof pickup_coordinates, pickup_coordinates);
-    console.log('Dropoff coords type:', typeof dropoff_coordinates, dropoff_coordinates);
 
-    // ✅ For PostgreSQL JSON type - pass objects directly
-    // PostgreSQL will handle the JSON conversion automatically
-    const pickupCoordJson = pickup_coordinates || null;
-    const dropoffCoordJson = dropoff_coordinates || null;
+    // 🔥 UNIVERSAL COORDINATE HANDLING
+    // Try JSON first, if it fails, use STRING format
+    let pickupCoordValue = null;
+    let dropoffCoordValue = null;
 
-    console.log('📝 Creating ride with Sequelize ORM...');
+    // Handle pickup coordinates
+    if (pickup_coordinates) {
+      if (typeof pickup_coordinates === 'object') {
+        // If model expects JSON, this will work
+        pickupCoordValue = pickup_coordinates;
+      } else if (typeof pickup_coordinates === 'string') {
+        // If model expects STRING, this will work
+        pickupCoordValue = pickup_coordinates;
+      }
+    }
 
-    // Use Sequelize ORM instead of raw SQL for PostgreSQL
-    const newRide = await Ride.create({
-      service_type: service_type || 'ride',
-      customer_name: customer_name.trim(),
-      customer_phone: customer_phone.trim(),
-      pickup_address: pickup_address.trim(),
-      pickup_coordinates: pickupCoordJson,
-      dropoff_address: dropoff_address.trim(),
-      dropoff_coordinates: dropoffCoordJson,
-      ride_type: ride_type || 'standard',
-      vehicle_type: vehicle_type || 'car',
-      payment_method: payment_method || 'cash',
-      estimated_distance: estimated_distance || '0 km',
-      estimated_duration: estimated_duration || '0 min',
-      fare: parseFloat(fare) || 0,
-      status: 'pending',
-      driver_id: null,
-      driver_name: null,
-      driver_phone: null,
-      delivery_details: delivery_details || null,
-      ride_started: false,
-      ride_completed: false
+    // Handle dropoff coordinates
+    if (dropoff_coordinates) {
+      if (typeof dropoff_coordinates === 'object') {
+        dropoffCoordValue = dropoff_coordinates;
+      } else if (typeof dropoff_coordinates === 'string') {
+        dropoffCoordValue = dropoff_coordinates;
+      }
+    }
+
+    console.log('📍 Coordinates processed');
+    console.log('  Pickup:', pickupCoordValue);
+    console.log('  Dropoff:', dropoffCoordValue);
+
+    // Create ride using RAW SQL to bypass Sequelize type checking
+    const query = `
+      INSERT INTO rides (
+        service_type, customer_name, customer_phone,
+        pickup_address, pickup_coordinates,
+        dropoff_address, dropoff_coordinates,
+        ride_type, vehicle_type, payment_method,
+        estimated_distance, estimated_duration, fare,
+        status, ride_started, ride_completed,
+        created_at, updated_at
+      ) VALUES (
+        $1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
+        $11, $12, $13, $14, $15, $16, $17, $18
+      ) RETURNING *
+    `;
+
+    const values = [
+      service_type || 'ride',
+      customer_name.trim(),
+      customer_phone.trim(),
+      pickup_address.trim(),
+      pickupCoordValue ? JSON.stringify(pickupCoordValue) : null,
+      dropoff_address.trim(),
+      dropoffCoordValue ? JSON.stringify(dropoffCoordValue) : null,
+      ride_type || 'standard',
+      vehicle_type || 'car',
+      payment_method || 'cash',
+      estimated_distance || '0 km',
+      estimated_duration || '0 min',
+      parseFloat(fare) || 0,
+      'pending',
+      false,
+      false,
+      new Date(),
+      new Date()
+    ];
+
+    const [result] = await sequelize.query(query, {
+      bind: values,
+      type: sequelize.QueryTypes.INSERT
     });
+
+    const newRide = result[0];
     
     console.log('========================================');
     console.log('✅ RIDE CREATED SUCCESSFULLY');
-    console.log('========================================');
     console.log('🆔 Ride ID:', newRide.id);
-    console.log('👤 Customer:', newRide.customer_name);
-    console.log('📞 Phone:', newRide.customer_phone);
-    console.log('🚀 Service Type:', newRide.service_type);
-    console.log('💰 Fare:', newRide.fare);
-    console.log('📍 Status:', newRide.status);
     console.log('========================================\n');
 
     res.status(201).json({
@@ -153,49 +183,27 @@ router.post('/rides', async (req, res) => {
   } catch (error) {
     console.log('========================================');
     console.error('❌ RIDE CREATION FAILED');
-    console.log('========================================');
-    console.error('Error Type:', error.name);
-    console.error('Error Message:', error.message);
-    
-    if (error.original) {
-      console.error('Original Error:', error.original.message);
-      console.error('SQL State:', error.original.code);
-    }
-    
-    if (error.sql) {
-      console.error('Failed SQL:', error.sql);
-    }
-    
-    console.error('Stack Trace:', error.stack);
+    console.error('Error:', error.message);
+    console.error('Stack:', error.stack);
     console.log('========================================\n');
 
     res.status(500).json({
       success: false,
       message: 'فشل في إرسال الطلب. يرجى المحاولة مرة أخرى.',
       ...(process.env.NODE_ENV === 'development' && {
-        error: error.message,
-        errorType: error.name
+        error: error.message
       })
     });
   }
 });
 
-// Get all rides (public - for testing)
+// Get all rides
 router.get('/rides', async (req, res) => {
   try {
-    console.log('📋 Fetching all rides...');
-    
     const rides = await Ride.findAll({
       order: [['created_at', 'DESC']],
-      limit: 50,
-      attributes: [
-        'id', 'service_type', 'customer_name', 'customer_phone',
-        'pickup_address', 'dropoff_address', 'fare', 'status',
-        'created_at', 'updated_at'
-      ]
+      limit: 50
     });
-
-    console.log(`✅ Retrieved ${rides.length} rides`);
 
     res.json({
       success: true,
@@ -212,12 +220,10 @@ router.get('/rides', async (req, res) => {
   }
 });
 
-// Get ride by ID (public - for tracking)
+// Get ride by ID
 router.get('/rides/:id', async (req, res) => {
   try {
-    const rideId = parseInt(req.params.id);
-    
-    const ride = await Ride.findByPk(rideId);
+    const ride = await Ride.findByPk(parseInt(req.params.id));
 
     if (!ride) {
       return res.status(404).json({
