@@ -8,7 +8,7 @@ const MenuItem = sequelize.define('MenuItem', {
     autoIncrement: true
   },
   name: {
-    type: DataTypes.STRING,
+    type: DataTypes.STRING(255),
     allowNull: false,
     validate: {
       notEmpty: true,
@@ -29,7 +29,6 @@ const MenuItem = sequelize.define('MenuItem', {
   original_price: {
     type: DataTypes.DECIMAL(10, 2),
     allowNull: true,
-    field: 'original_price',
     validate: {
       min: 0
     }
@@ -38,7 +37,6 @@ const MenuItem = sequelize.define('MenuItem', {
     type: DataTypes.DECIMAL(5, 2),
     allowNull: true,
     defaultValue: 0,
-    field: 'discount_percentage',
     validate: {
       min: 0,
       max: 100
@@ -46,67 +44,56 @@ const MenuItem = sequelize.define('MenuItem', {
   },
   has_discount: {
     type: DataTypes.BOOLEAN,
-    defaultValue: false,
-    field: 'has_discount'
+    defaultValue: false
   },
   category: {
-    type: DataTypes.ENUM('Main', 'Starter', 'Dessert', 'Drinks'),
+    type: DataTypes.STRING(50),
     allowNull: false,
-    defaultValue: 'Main'
+    defaultValue: 'Main',
+    validate: {
+      isIn: [['Main', 'Starter', 'Dessert', 'Drinks']]
+    }
   },
   image_url: {
     type: DataTypes.TEXT,
-    allowNull: true,
-    field: 'image_url'
+    allowNull: true
   },
   prep_time: {
     type: DataTypes.INTEGER,
     allowNull: true,
-    field: 'prep_time',
     comment: 'Preparation time in minutes'
   },
   is_popular: {
     type: DataTypes.BOOLEAN,
-    defaultValue: false,
-    field: 'is_popular'
+    defaultValue: false
   },
   available: {
     type: DataTypes.BOOLEAN,
     defaultValue: true
   },
   restaurant_email: {
-    type: DataTypes.STRING,
+    type: DataTypes.STRING(255),
     allowNull: false,
-    field: 'restaurant_email',
     validate: {
       isEmail: true
     }
   },
   restaurant_id: {
     type: DataTypes.INTEGER,
-    allowNull: true,
-    field: 'restaurant_id',
-    references: {
-      model: 'users',
-      key: 'id'
-    }
+    allowNull: true
   }
 }, {
   tableName: 'menu_items',
-  timestamps: false,  // Disable automatic timestamp handling to avoid column name conflicts
+  timestamps: true,  // ✅ Changed to true since Neon has createdAt/updatedAt
+  underscored: false, // ✅ Changed to false since Neon uses camelCase (createdAt, updatedAt)
+  createdAt: 'createdAt',  // ✅ Explicitly map to camelCase
+  updatedAt: 'updatedAt',  // ✅ Explicitly map to camelCase
   indexes: [
-    {
-      fields: ['restaurant_email']
-    },
-    {
-      fields: ['restaurant_id']
-    },
-    {
-      fields: ['category']
-    },
-    {
-      fields: ['available']
-    }
+    { fields: ['restaurant_email'] },
+    { fields: ['restaurant_id'] },
+    { fields: ['category'] },
+    { fields: ['available'] },
+    { fields: ['is_popular'] }
   ]
 });
 
