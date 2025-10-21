@@ -1,4 +1,4 @@
-// src/routes/rides.js - FIXED FOR DATABASE COMPATIBILITY
+// src/routes/rides.js - POSTGRESQL OPTIMIZED VERSION
 const express = require('express');
 const sequelize = require('../config/database');
 const { auth, requireRole } = require('../middleware/auth');
@@ -28,7 +28,7 @@ router.get('/test', async (req, res) => {
   }
 });
 
-// Get all rides - USING RAW SQL TO AVOID SEQUELIZE ASSOCIATION ISSUES
+// Get all rides - POSTGRESQL OPTIMIZED WITH PROPER ERROR HANDLING
 router.get('/', auth, async (req, res) => {
   try {
     console.log('========================================');
@@ -43,44 +43,43 @@ router.get('/', auth, async (req, res) => {
     
     if (req.user.role === 'driver') {
       // Drivers see: their assigned rides + pending rides with no driver
+      // PostgreSQL-specific: Use COALESCE for NULL handling
       query = `
         SELECT * FROM rides 
-        WHERE driver_id = :driverId 
-           OR (status = 'pending' AND (driver_id IS NULL OR driver_id = ''))
+        WHERE driver_id = $1 
+           OR (status = 'pending' AND driver_id IS NULL)
         ORDER BY created_at DESC
       `;
-      replacements = { driverId: req.user.id };
+      replacements = [req.user.id];
       
-      console.log('🚗 Driver query - looking for:');
-      console.log('  - Rides assigned to driver ID:', req.user.id);
-      console.log('  - Pending rides with no driver assigned');
+      console.log('🚗 Driver query with ID:', req.user.id);
     } else if (req.user.role === 'admin') {
       // Admins see all rides
       query = `SELECT * FROM rides ORDER BY created_at DESC`;
+      replacements = [];
       console.log('👑 Admin query - fetching all rides');
     } else {
       // Regular customers see their own rides
       query = `
         SELECT * FROM rides 
-        WHERE customer_phone = :phone 
+        WHERE customer_phone = $1 
         ORDER BY created_at DESC
       `;
-      replacements = { phone: req.user.phone };
+      replacements = [req.user.phone];
       console.log('👤 Customer query - phone:', req.user.phone);
     }
 
-    console.log('Executing SQL query...');
-    const [allRides] = await sequelize.query(query, {
-      replacements,
+    console.log('Executing PostgreSQL query...');
+    console.log('Query:', query);
+    console.log('Replacements:', replacements);
+
+    // Use bind parameters for PostgreSQL
+    const rides = await sequelize.query(query, {
+      bind: replacements,
       type: sequelize.QueryTypes.SELECT
     });
 
-    console.log(`✅ Found ${allRides ? 1 : 0} result sets`);
-    
-    // Handle the result - it might be a single array or wrapped
-    const rides = Array.isArray(allRides) ? allRides : [allRides].filter(Boolean);
-    
-    console.log(`✅ Processed ${rides.length} rides`);
+    console.log(`✅ Found ${rides.length} rides`);
 
     if (rides.length > 0) {
       console.log('Sample ride:', JSON.stringify(rides[0], null, 2));
@@ -94,15 +93,13 @@ router.get('/', auth, async (req, res) => {
       
       if (ride.driver_id) {
         try {
-          const [driverResults] = await sequelize.query(
-            'SELECT id, name, phone, vehicle FROM users WHERE id = :driverId',
+          const [driver] = await sequelize.query(
+            'SELECT id, name, phone, vehicle FROM users WHERE id = $1',
             {
-              replacements: { driverId: ride.driver_id },
+              bind: [ride.driver_id],
               type: sequelize.QueryTypes.SELECT
             }
           );
-          
-          const driver = Array.isArray(driverResults) ? driverResults[0] : driverResults;
           
           if (driver) {
             rideWithDriver.driver = driver;
@@ -146,7 +143,7 @@ router.get('/', auth, async (req, res) => {
   }
 });
 
-// Update ride status - USING RAW SQL
+// Update ride status - POSTGRESQL OPTIMIZED
 router.put('/:id', auth, async (req, res) => {
   try {
     const rideId = parseInt(req.params.id);
@@ -161,15 +158,13 @@ router.put('/:id', auth, async (req, res) => {
     console.log('========================================');
 
     // Fetch current ride
-    const [rideResults] = await sequelize.query(
-      'SELECT * FROM rides WHERE id = :rideId',
+    const [ride] = await sequelize.query(
+      'SELECT * FROM rides WHERE id = $1',
       {
-        replacements: { rideId },
+        bind: [rideId],
         type: sequelize.QueryTypes.SELECT
       }
     );
-    
-    const ride = Array.isArray(rideResults) ? rideResults[0] : rideResults;
     
     if (!ride) {
       console.log('❌ Ride not found');
@@ -186,15 +181,13 @@ router.put('/:id', auth, async (req, res) => {
     if (req.user.role === 'driver') {
       if (ride.status === 'pending' && !ride.driver_id && updates.status === 'accepted') {
         // Driver accepting a ride - fetch driver info
-        const [driverResults] = await sequelize.query(
-          'SELECT id, name, phone, vehicle FROM users WHERE id = :driverId',
+        const [driver] = await sequelize.query(
+          'SELECT id, name, phone, vehicle FROM users WHERE id = $1',
           {
-            replacements: { driverId: req.user.id },
+            bind: [req.user.id],
             type: sequelize.QueryTypes.SELECT
           }
         );
-        
-        const driver = Array.isArray(driverResults) ? driverResults[0] : driverResults;
         
         if (!driver) {
           console.log('❌ Driver profile not found');
@@ -225,53 +218,48 @@ router.put('/:id', auth, async (req, res) => {
       });
     }
 
-    // Build update query dynamically
+    // Build update query dynamically using PostgreSQL placeholders
     const updateFields = [];
-    const updateValues = { rideId };
+    const updateValues = [];
+    let paramIndex = 1;
     
     Object.keys(updates).forEach(key => {
-      updateFields.push(`${key} = :${key}`);
-      updateValues[key] = updates[key];
+      updateFields.push(`${key} = $${paramIndex}`);
+      updateValues.push(updates[key]);
+      paramIndex++;
     });
     
     // Always update updated_at
-    updateFields.push('updated_at = :updated_at');
-    updateValues.updated_at = new Date().toISOString();
+    updateFields.push(`updated_at = $${paramIndex}`);
+    updateValues.push(new Date().toISOString());
+    paramIndex++;
+    
+    // Add ride ID at the end
+    updateValues.push(rideId);
 
     const updateQuery = `
       UPDATE rides 
       SET ${updateFields.join(', ')}
-      WHERE id = :rideId
+      WHERE id = $${paramIndex}
+      RETURNING *
     `;
 
     console.log('Update query:', updateQuery);
     console.log('Update values:', updateValues);
 
-    await sequelize.query(updateQuery, {
-      replacements: updateValues,
+    const [updatedRide] = await sequelize.query(updateQuery, {
+      bind: updateValues,
       type: sequelize.QueryTypes.UPDATE
     });
 
-    // Fetch updated ride
-    const [updatedRideResults] = await sequelize.query(
-      'SELECT * FROM rides WHERE id = :rideId',
-      {
-        replacements: { rideId },
-        type: sequelize.QueryTypes.SELECT
-      }
-    );
-    
-    const updatedRide = Array.isArray(updatedRideResults) ? updatedRideResults[0] : updatedRideResults;
-
     console.log('✅ Ride updated successfully');
-    console.log('New status:', updatedRide.status);
-    console.log('New driver_id:', updatedRide.driver_id);
+    console.log('New status:', updatedRide?.status || 'unknown');
     console.log('========================================\n');
 
     res.json({
       success: true,
       message: 'تم تحديث الطلب بنجاح',
-      ride: updatedRide
+      ride: updatedRide || ride
     });
 
   } catch (error) {
@@ -284,20 +272,18 @@ router.put('/:id', auth, async (req, res) => {
   }
 });
 
-// Get ride by ID - USING RAW SQL
+// Get ride by ID - POSTGRESQL OPTIMIZED
 router.get('/:id', auth, async (req, res) => {
   try {
     const rideId = parseInt(req.params.id);
     
-    const [rideResults] = await sequelize.query(
-      'SELECT * FROM rides WHERE id = :rideId',
+    const [ride] = await sequelize.query(
+      'SELECT * FROM rides WHERE id = $1',
       {
-        replacements: { rideId },
+        bind: [rideId],
         type: sequelize.QueryTypes.SELECT
       }
     );
-    
-    const ride = Array.isArray(rideResults) ? rideResults[0] : rideResults;
 
     if (!ride) {
       return res.status(404).json({
@@ -309,15 +295,14 @@ router.get('/:id', auth, async (req, res) => {
     // Fetch driver info if assigned
     if (ride.driver_id) {
       try {
-        const [driverResults] = await sequelize.query(
-          'SELECT id, name, phone, vehicle FROM users WHERE id = :driverId',
+        const [driver] = await sequelize.query(
+          'SELECT id, name, phone, vehicle FROM users WHERE id = $1',
           {
-            replacements: { driverId: ride.driver_id },
+            bind: [ride.driver_id],
             type: sequelize.QueryTypes.SELECT
           }
         );
         
-        const driver = Array.isArray(driverResults) ? driverResults[0] : driverResults;
         if (driver) {
           ride.driver = driver;
         }
@@ -364,15 +349,13 @@ router.delete('/:id', auth, requireRole(['admin']), async (req, res) => {
   try {
     const rideId = parseInt(req.params.id);
     
-    const [rideResults] = await sequelize.query(
-      'SELECT * FROM rides WHERE id = :rideId',
+    const [ride] = await sequelize.query(
+      'SELECT * FROM rides WHERE id = $1',
       {
-        replacements: { rideId },
+        bind: [rideId],
         type: sequelize.QueryTypes.SELECT
       }
     );
-    
-    const ride = Array.isArray(rideResults) ? rideResults[0] : rideResults;
 
     if (!ride) {
       return res.status(404).json({
@@ -382,9 +365,9 @@ router.delete('/:id', auth, requireRole(['admin']), async (req, res) => {
     }
 
     await sequelize.query(
-      'DELETE FROM rides WHERE id = :rideId',
+      'DELETE FROM rides WHERE id = $1',
       {
-        replacements: { rideId },
+        bind: [rideId],
         type: sequelize.QueryTypes.DELETE
       }
     );
@@ -403,40 +386,40 @@ router.delete('/:id', auth, requireRole(['admin']), async (req, res) => {
   }
 });
 
-// Get rides statistics - Admin only - USING RAW SQL
+// Get rides statistics - Admin only - POSTGRESQL OPTIMIZED
 router.get('/stats/overview', auth, requireRole(['admin']), async (req, res) => {
   try {
-    const [totalResults] = await sequelize.query(
+    const [[totalResult]] = await sequelize.query(
       'SELECT COUNT(*) as total FROM rides',
       { type: sequelize.QueryTypes.SELECT }
     );
-    const totalRides = totalResults.total || 0;
+    const totalRides = parseInt(totalResult?.total) || 0;
 
-    const [pendingResults] = await sequelize.query(
+    const [[pendingResult]] = await sequelize.query(
       "SELECT COUNT(*) as total FROM rides WHERE status = 'pending'",
       { type: sequelize.QueryTypes.SELECT }
     );
-    const pendingRides = pendingResults.total || 0;
+    const pendingRides = parseInt(pendingResult?.total) || 0;
 
-    const [activeResults] = await sequelize.query(
+    const [[activeResult]] = await sequelize.query(
       "SELECT COUNT(*) as total FROM rides WHERE status IN ('accepted', 'in_progress')",
       { type: sequelize.QueryTypes.SELECT }
     );
-    const activeRides = activeResults.total || 0;
+    const activeRides = parseInt(activeResult?.total) || 0;
 
-    const [completedResults] = await sequelize.query(
+    const [[completedResult]] = await sequelize.query(
       "SELECT COUNT(*) as total FROM rides WHERE status = 'completed'",
       { type: sequelize.QueryTypes.SELECT }
     );
-    const completedRides = completedResults.total || 0;
+    const completedRides = parseInt(completedResult?.total) || 0;
 
-    const [cancelledResults] = await sequelize.query(
+    const [[cancelledResult]] = await sequelize.query(
       "SELECT COUNT(*) as total FROM rides WHERE status = 'cancelled'",
       { type: sequelize.QueryTypes.SELECT }
     );
-    const cancelledRides = cancelledResults.total || 0;
+    const cancelledRides = parseInt(cancelledResult?.total) || 0;
 
-    const [revenueResults] = await sequelize.query(
+    const revenueResults = await sequelize.query(
       "SELECT fare FROM rides WHERE status = 'completed'",
       { type: sequelize.QueryTypes.SELECT }
     );
@@ -445,7 +428,7 @@ router.get('/stats/overview', auth, requireRole(['admin']), async (req, res) => 
       return sum + (parseFloat(ride.fare) || 0);
     }, 0);
 
-    const [rideTypeResults] = await sequelize.query(
+    const rideTypeResults = await sequelize.query(
       'SELECT service_type, COUNT(*) as count FROM rides GROUP BY service_type',
       { type: sequelize.QueryTypes.SELECT }
     );
