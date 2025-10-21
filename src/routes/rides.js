@@ -1,7 +1,8 @@
-// src/routes/rides.js - ULTRA-SIMPLE VERSION THAT WILL WORK
+// src/routes/rides.js - FIXED FOR DRIVER DASHBOARD
 const express = require('express');
 const { Op } = require('sequelize');
-const sequelize = require('../config/database');
+const User = require('../models/User');
+const Ride = require('../models/Ride');
 const { auth, requireRole } = require('../middleware/auth');
 
 const router = express.Router();
@@ -9,12 +10,12 @@ const router = express.Router();
 // Test route
 router.get('/test', async (req, res) => {
   try {
-    const [results] = await sequelize.query('SELECT COUNT(*) as count FROM rides');
+    const totalRides = await Ride.count();
     res.json({
       success: true,
       message: 'Rides route is working',
       timestamp: new Date().toISOString(),
-      totalRides: results[0].count
+      totalRides
     });
   } catch (error) {
     res.json({
@@ -26,98 +27,94 @@ router.get('/test', async (req, res) => {
   }
 });
 
-// Get all rides - ULTRA SIMPLE RAW SQL VERSION
+// Get all rides - Requires authentication - FIXED VERSION
 router.get('/', auth, async (req, res) => {
   try {
-    console.log('=== FETCHING RIDES ===');
-    console.log('User ID:', req.user.id);
-    console.log('User Role:', req.user.role);
-    console.log('User Phone:', req.user.phone);
+    console.log('Fetching rides for user:', req.user.id, 'role:', req.user.role);
 
-    let query = '';
-    let replacements = {};
-
+    let whereClause = {};
+    
     if (req.user.role === 'driver') {
-      // Drivers see: their assigned rides + all pending rides
-      query = `
-        SELECT * FROM rides 
-        WHERE driver_id = :userId 
-        OR (status = 'pending' AND driver_id IS NULL)
-        ORDER BY created_at DESC
-      `;
-      replacements = { userId: req.user.id };
+      // Drivers see: their assigned rides + pending rides
+      whereClause = {
+        [Op.or]: [
+          { driver_id: req.user.id },
+          { 
+            status: 'pending',
+            driver_id: null
+          }
+        ]
+      };
     } else if (req.user.role === 'admin') {
       // Admins see all rides
-      query = `
-        SELECT * FROM rides 
-        ORDER BY created_at DESC
-      `;
     } else {
-      // Customers see their own rides
-      query = `
-        SELECT * FROM rides 
-        WHERE customer_phone = :phone
-        ORDER BY created_at DESC
-      `;
-      replacements = { phone: req.user.phone };
+      // Regular customers see their own rides
+      whereClause = {
+        customer_phone: req.user.phone
+      };
     }
 
-    console.log('Executing query:', query);
-    console.log('With replacements:', replacements);
-
-    const [rides] = await sequelize.query(query, {
-      replacements,
-      type: sequelize.QueryTypes.SELECT
+    // Fetch rides WITHOUT associations to avoid errors
+    const allRides = await Ride.findAll({
+      where: whereClause,
+      order: [['created_at', 'DESC']],
+      raw: true // Return plain objects, no associations
     });
 
-    console.log(`Found ${rides ? rides.length : 0} rides`);
+    // If driver is assigned, manually fetch driver details
+    const ridesWithDriverInfo = await Promise.all(
+      allRides.map(async (ride) => {
+        if (ride.driver_id) {
+          try {
+            const driver = await User.findByPk(ride.driver_id, {
+              attributes: ['id', 'name', 'phone', 'vehicle'],
+              raw: true
+            });
+            return {
+              ...ride,
+              driver: driver || null
+            };
+          } catch (err) {
+            console.error('Error fetching driver for ride:', ride.id, err);
+            return ride;
+          }
+        }
+        return ride;
+      })
+    );
 
-    // If no rides found, return empty array
-    const ridesArray = Array.isArray(rides) ? rides : (rides ? [rides] : []);
+    console.log(`Returning ${ridesWithDriverInfo.length} rides for user role: ${req.user.role}`);
 
     res.json({
       success: true,
-      rides: ridesArray,
-      count: ridesArray.length
+      rides: ridesWithDriverInfo,
+      count: ridesWithDriverInfo.length
     });
 
   } catch (error) {
-    console.error('=== ERROR FETCHING RIDES ===');
-    console.error('Error name:', error.name);
-    console.error('Error message:', error.message);
+    console.error('Get rides error:', error);
     console.error('Error stack:', error.stack);
-    
     res.status(500).json({
       success: false,
       message: 'فشل في جلب الطلبات',
       ...(process.env.NODE_ENV === 'development' && {
         error: error.message,
-        errorType: error.name
+        stack: error.stack
       })
     });
   }
 });
 
-// Update ride - RAW SQL VERSION
+// Update ride status - Requires authentication
 router.put('/:id', auth, async (req, res) => {
   try {
     const rideId = parseInt(req.params.id);
     const updates = req.body;
 
-    console.log('=== UPDATING RIDE ===');
-    console.log('Ride ID:', rideId);
-    console.log('User ID:', req.user.id);
-    console.log('Updates:', updates);
+    console.log('Updating ride:', rideId, 'by user:', req.user.id, 'updates:', updates);
 
-    // First, get the ride
-    const [ride] = await sequelize.query(
-      'SELECT * FROM rides WHERE id = :id',
-      {
-        replacements: { id: rideId },
-        type: sequelize.QueryTypes.SELECT
-      }
-    );
-
+    const ride = await Ride.findByPk(rideId);
+    
     if (!ride) {
       return res.status(404).json({
         success: false,
@@ -125,92 +122,55 @@ router.put('/:id', auth, async (req, res) => {
       });
     }
 
-    // Check permissions
+    // Permission checks
     if (req.user.role === 'driver') {
+      // Drivers can accept pending rides or update their assigned rides
       if (ride.status === 'pending' && !ride.driver_id && updates.status === 'accepted') {
-        // Driver accepting a ride - get driver info
-        const [driver] = await sequelize.query(
-          'SELECT id, name, phone FROM users WHERE id = :id',
-          {
-            replacements: { id: req.user.id },
-            type: sequelize.QueryTypes.SELECT
-          }
-        );
-
+        // Driver accepting a ride
+        const driver = await User.findByPk(req.user.id);
         if (!driver) {
           return res.status(403).json({
             success: false,
             message: 'بيانات السائق غير موجودة'
           });
         }
-
         // Add driver info to updates
         updates.driver_id = req.user.id;
         updates.driver_name = driver.name;
         updates.driver_phone = driver.phone;
-        updates.accepted_at = new Date().toISOString();
       } else if (ride.driver_id && ride.driver_id !== req.user.id) {
+        // Driver trying to update someone else's ride
         return res.status(403).json({
           success: false,
           message: 'لا يمكنك تعديل طلب سائق آخر'
         });
       }
     } else if (req.user.role !== 'admin') {
+      // Regular users can't update rides
       return res.status(403).json({
         success: false,
         message: 'غير مُخوَّل لتعديل الطلبات'
       });
     }
 
-    // Build UPDATE query dynamically
-    const updateFields = [];
-    const replacements = { id: rideId };
-    
-    Object.keys(updates).forEach((key, index) => {
-      updateFields.push(`${key} = :${key}`);
-      replacements[key] = updates[key];
+    // Update the ride
+    await ride.update(updates);
+    await ride.reload();
+
+    console.log('Ride updated successfully:', {
+      id: ride.id,
+      status: ride.status,
+      driver_id: ride.driver_id
     });
-
-    // Always update updated_at
-    updateFields.push('updated_at = :updated_at');
-    replacements.updated_at = new Date().toISOString();
-
-    const updateQuery = `
-      UPDATE rides 
-      SET ${updateFields.join(', ')}
-      WHERE id = :id
-    `;
-
-    console.log('Update query:', updateQuery);
-    console.log('Replacements:', replacements);
-
-    await sequelize.query(updateQuery, {
-      replacements,
-      type: sequelize.QueryTypes.UPDATE
-    });
-
-    // Fetch updated ride
-    const [updatedRide] = await sequelize.query(
-      'SELECT * FROM rides WHERE id = :id',
-      {
-        replacements: { id: rideId },
-        type: sequelize.QueryTypes.SELECT
-      }
-    );
-
-    console.log('Ride updated successfully');
 
     res.json({
       success: true,
       message: 'تم تحديث الطلب بنجاح',
-      ride: updatedRide
+      ride: ride
     });
 
   } catch (error) {
-    console.error('=== ERROR UPDATING RIDE ===');
-    console.error('Error:', error.message);
-    console.error('Stack:', error.stack);
-    
+    console.error('Update ride error:', error);
     res.status(500).json({
       success: false,
       message: 'فشل في تحديث الطلب'
@@ -218,18 +178,11 @@ router.put('/:id', auth, async (req, res) => {
   }
 });
 
-// Get ride by ID
+// Get ride by ID - Requires authentication
 router.get('/:id', auth, async (req, res) => {
   try {
     const rideId = parseInt(req.params.id);
-    
-    const [ride] = await sequelize.query(
-      'SELECT * FROM rides WHERE id = :id',
-      {
-        replacements: { id: rideId },
-        type: sequelize.QueryTypes.SELECT
-      }
-    );
+    const ride = await Ride.findByPk(rideId, { raw: true });
 
     if (!ride) {
       return res.status(404).json({
@@ -238,7 +191,20 @@ router.get('/:id', auth, async (req, res) => {
       });
     }
 
-    // Check permissions
+    // Fetch driver info if assigned
+    if (ride.driver_id) {
+      try {
+        const driver = await User.findByPk(ride.driver_id, {
+          attributes: ['id', 'name', 'phone', 'vehicle'],
+          raw: true
+        });
+        ride.driver = driver;
+      } catch (err) {
+        console.error('Error fetching driver:', err);
+      }
+    }
+
+    // Permission checks
     let canAccess = false;
     
     if (req.user.role === 'admin') {
@@ -275,14 +241,7 @@ router.get('/:id', auth, async (req, res) => {
 router.delete('/:id', auth, requireRole(['admin']), async (req, res) => {
   try {
     const rideId = parseInt(req.params.id);
-    
-    const [ride] = await sequelize.query(
-      'SELECT * FROM rides WHERE id = :id',
-      {
-        replacements: { id: rideId },
-        type: sequelize.QueryTypes.SELECT
-      }
-    );
+    const ride = await Ride.findByPk(rideId);
 
     if (!ride) {
       return res.status(404).json({
@@ -291,13 +250,7 @@ router.delete('/:id', auth, requireRole(['admin']), async (req, res) => {
       });
     }
 
-    await sequelize.query(
-      'DELETE FROM rides WHERE id = :id',
-      {
-        replacements: { id: rideId },
-        type: sequelize.QueryTypes.DELETE
-      }
-    );
+    await ride.destroy();
 
     res.json({
       success: true,
@@ -309,6 +262,68 @@ router.delete('/:id', auth, requireRole(['admin']), async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'فشل في حذف الطلب'
+    });
+  }
+});
+
+// Get rides statistics - Admin only
+router.get('/stats/overview', auth, requireRole(['admin']), async (req, res) => {
+  try {
+    const totalRides = await Ride.count();
+    const pendingRides = await Ride.count({ where: { status: 'pending' } });
+    const activeRides = await Ride.count({ 
+      where: { 
+        status: {
+          [Op.in]: ['accepted', 'in_progress']
+        }
+      }
+    });
+    const completedRides = await Ride.count({ where: { status: 'completed' } });
+    const cancelledRides = await Ride.count({ where: { status: 'cancelled' } });
+    
+    const completedRidesWithFare = await Ride.findAll({
+      where: { status: 'completed' },
+      attributes: ['fare'],
+      raw: true
+    });
+    
+    const totalRevenue = completedRidesWithFare.reduce((sum, ride) => {
+      return sum + (parseFloat(ride.fare) || 0);
+    }, 0);
+
+    const sequelize = require('../config/database');
+    const rideTypeCounts = await Ride.findAll({
+      attributes: [
+        'service_type',
+        [sequelize.fn('COUNT', sequelize.col('service_type')), 'count']
+      ],
+      group: ['service_type'],
+      raw: true
+    });
+
+    const rideTypes = {};
+    rideTypeCounts.forEach(item => {
+      rideTypes[item.service_type] = parseInt(item.count);
+    });
+
+    res.json({
+      success: true,
+      stats: {
+        totalRides,
+        pendingRides,
+        activeRides,
+        completedRides,
+        cancelledRides,
+        totalRevenue: totalRevenue.toFixed(2),
+        rideTypes
+      }
+    });
+
+  } catch (error) {
+    console.error('Get rides stats error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'فشل في جلب إحصائيات الطلبات'
     });
   }
 });
