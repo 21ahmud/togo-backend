@@ -164,7 +164,8 @@ router.post('/rides', async (req, res) => {
     console.error('Message:', error.message);
     
     if (error.original) {
-      console.error('Original:', error.original.message);
+      console.error('Original Error:', error.original);
+      console.error('Original SQL:', error.sql);
     }
     
     if (error.errors) {
@@ -172,6 +173,7 @@ router.post('/rides', async (req, res) => {
       error.errors.forEach(e => console.error(`  - ${e.path}: ${e.message}`));
     }
     
+    console.error('Full Error Object:', JSON.stringify(error, null, 2));
     console.error('Stack:', error.stack);
     console.log('='.repeat(50) + '\n');
 
@@ -180,7 +182,8 @@ router.post('/rides', async (req, res) => {
       message: 'فشل في إرسال الطلب. يرجى المحاولة مرة أخرى.',
       ...(process.env.NODE_ENV !== 'production' && {
         error: error.message,
-        type: error.name
+        type: error.name,
+        details: error.original?.message
       })
     });
   }

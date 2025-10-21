@@ -1,4 +1,4 @@
-// src/models/Ride.js - FINAL CORRECTED VERSION
+// src/models/Ride.js - UUID Compatible for PostgreSQL
 const { DataTypes } = require('sequelize');
 const sequelize = require('../config/database');
 
@@ -79,7 +79,7 @@ const Ride = sequelize.define('Ride', {
     }
   },
   driver_id: {
-    type: DataTypes.INTEGER,
+    type: DataTypes.UUID,  // ✅ Changed from INTEGER to UUID to match users table
     allowNull: true,
     references: {
       model: 'users',
@@ -97,7 +97,7 @@ const Ride = sequelize.define('Ride', {
     allowNull: true
   },
   delivery_details: {
-    type: sequelize.getDialect() === 'postgres' ? DataTypes.JSONB : DataTypes.JSON,  // ✅ FIXED!
+    type: DataTypes.JSONB,
     allowNull: true,
     defaultValue: null
   },
@@ -140,18 +140,10 @@ const Ride = sequelize.define('Ride', {
 }, {
   tableName: 'rides',
   timestamps: true,
+  underscored: true,
   createdAt: 'created_at',
   updatedAt: 'updated_at',
-  hooks: {
-    beforeCreate: (ride) => {
-      const now = new Date();
-      ride.created_at = now;
-      ride.updated_at = now;
-    },
-    beforeUpdate: (ride) => {
-      ride.updated_at = new Date();
-    }
-  },
+  // Don't use hooks - let Sequelize handle timestamps automatically
   indexes: [
     {
       fields: ['status']
@@ -171,6 +163,7 @@ const Ride = sequelize.define('Ride', {
   ]
 });
 
+// Instance methods
 Ride.prototype.acceptByDriver = async function(driver) {
   this.status = 'accepted';
   this.driver_id = driver.id;
