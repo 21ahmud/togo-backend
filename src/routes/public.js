@@ -1,14 +1,16 @@
-// src/routes/public.js - COMPLETE FIX with Enhanced Logging
+// src/routes/public.js - FINAL WORKING VERSION
 const express = require('express');
 const router = express.Router();
+const { QueryTypes } = require('sequelize');
 const sequelize = require('../config/database');
 
-// Import models directly - avoid association issues
+// Import models
 const User = require('../models/User');
 const Ride = require('../models/Ride');
 
 // Test route
 router.get('/test', (req, res) => {
+  console.log('✅ Public test route accessed');
   res.json({
     success: true,
     message: 'Public routes working',
@@ -19,7 +21,7 @@ router.get('/test', (req, res) => {
 // Get available drivers (public - no auth)
 router.get('/drivers', async (req, res) => {
   try {
-    console.log('Public request for available drivers');
+    console.log('📍 Public request for available drivers');
     
     const drivers = await User.findAll({
       where: {
@@ -31,7 +33,7 @@ router.get('/drivers', async (req, res) => {
       attributes: ['id', 'name', 'phone', 'vehicle', 'rating', 'location']
     });
 
-    console.log(`Found ${drivers.length} available drivers`);
+    console.log(`✅ Found ${drivers.length} available drivers`);
 
     res.json({
       success: true,
@@ -40,21 +42,23 @@ router.get('/drivers', async (req, res) => {
     });
 
   } catch (error) {
-    console.error('Get drivers error:', error);
+    console.error('❌ Get drivers error:', error.message);
     res.status(500).json({
       success: false,
-      message: 'فشل في جلب السائقين',
-      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+      message: 'فشل في جلب السائقين'
     });
   }
 });
 
-// Create ride (public - no auth) - FIXED VERSION
+// Create ride using RAW SQL (bypasses Sequelize associations)
 router.post('/rides', async (req, res) => {
+  console.log('\n========================================');
+  console.log('🚗 NEW RIDE REQUEST RECEIVED');
+  console.log('========================================');
+  console.log('📅 Timestamp:', new Date().toISOString());
+  console.log('📦 Request Body:', JSON.stringify(req.body, null, 2));
+  
   try {
-    console.log('=== PUBLIC RIDE REQUEST START ===');
-    console.log('Request body:', JSON.stringify(req.body, null, 2));
-
     const {
       service_type,
       customer_name,
@@ -74,164 +78,122 @@ router.post('/rides', async (req, res) => {
 
     // Validate required fields
     if (!customer_name || !customer_phone || !pickup_address || !dropoff_address) {
-      console.error('Missing required fields:', {
-        customer_name: !!customer_name,
-        customer_phone: !!customer_phone,
-        pickup_address: !!pickup_address,
-        dropoff_address: !!dropoff_address
-      });
-      
+      console.error('❌ Validation failed - missing required fields');
       return res.status(400).json({
         success: false,
         message: 'البيانات المطلوبة ناقصة'
       });
     }
 
-    // Prepare ride data - EXPLICIT FIELDS ONLY
-    const rideData = {
-      service_type: service_type || 'ride',
-      customer_name: customer_name.trim(),
-      customer_phone: customer_phone.trim(),
-      pickup_address: pickup_address.trim(),
-      pickup_coordinates: pickup_coordinates || null,
-      dropoff_address: dropoff_address.trim(),
-      dropoff_coordinates: dropoff_coordinates || null,
-      ride_type: ride_type || 'standard',
-      vehicle_type: vehicle_type || 'car',
-      payment_method: payment_method || 'cash',
-      estimated_distance: estimated_distance || '0 km',
-      estimated_duration: estimated_duration || '0 min',
-      fare: parseFloat(fare) || 0,
-      status: 'pending',
-      driver_id: null,
-      driver_name: null,
-      driver_phone: null,
-      delivery_details: delivery_details || null,
-      ride_started: false,
-      ride_completed: false
-    };
+    console.log('✅ Validation passed');
+    console.log('📝 Preparing SQL insert...');
 
-    console.log('Prepared ride data:', JSON.stringify(rideData, null, 2));
+    // Use RAW SQL to completely bypass Sequelize ORM
+    const query = `
+      INSERT INTO rides (
+        service_type, customer_name, customer_phone,
+        pickup_address, pickup_coordinates,
+        dropoff_address, dropoff_coordinates,
+        ride_type, vehicle_type, payment_method,
+        estimated_distance, estimated_duration, fare,
+        status, driver_id, driver_name, driver_phone,
+        delivery_details, ride_started, ride_completed,
+        created_at, updated_at
+      ) VALUES (
+        $1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
+        $11, $12, $13, $14, $15, $16, $17, $18, $19, $20,
+        NOW(), NOW()
+      )
+      RETURNING id, service_type, customer_name, customer_phone,
+                pickup_address, dropoff_address, fare, status, created_at;
+    `;
 
-    // Method 1: Try using Sequelize create with explicit fields
-    try {
-      console.log('Attempting Sequelize create...');
-      
-      const newRide = await Ride.create(rideData, {
-        fields: [
-          'service_type', 'customer_name', 'customer_phone',
-          'pickup_address', 'pickup_coordinates',
-          'dropoff_address', 'dropoff_coordinates',
-          'ride_type', 'vehicle_type', 'payment_method',
-          'estimated_distance', 'estimated_duration', 'fare',
-          'status', 'driver_id', 'driver_name', 'driver_phone',
-          'delivery_details', 'ride_started', 'ride_completed'
-        ],
-        returning: true
-      });
+    const values = [
+      service_type || 'ride',                    // $1
+      customer_name.trim(),                       // $2
+      customer_phone.trim(),                      // $3
+      pickup_address.trim(),                      // $4
+      pickup_coordinates || null,                 // $5
+      dropoff_address.trim(),                     // $6
+      dropoff_coordinates || null,                // $7
+      ride_type || 'standard',                    // $8
+      vehicle_type || 'car',                      // $9
+      payment_method || 'cash',                   // $10
+      estimated_distance || '0 km',               // $11
+      estimated_duration || '0 min',              // $12
+      parseFloat(fare) || 0,                      // $13
+      'pending',                                  // $14 - status
+      null,                                       // $15 - driver_id
+      null,                                       // $16 - driver_name
+      null,                                       // $17 - driver_phone
+      delivery_details ? JSON.stringify(delivery_details) : null, // $18
+      false,                                      // $19 - ride_started
+      false                                       // $20 - ride_completed
+    ];
 
-      console.log('✅ Ride created successfully with Sequelize:', newRide.id);
+    console.log('🔧 SQL Query prepared');
+    console.log('📊 Values:', values.map((v, i) => `$${i+1}: ${v}`).join(', '));
 
-      return res.json({
-        success: true,
-        message: 'تم إنشاء الطلب بنجاح',
-        ride: {
-          id: newRide.id,
-          service_type: newRide.service_type,
-          customer_name: newRide.customer_name,
-          pickup_address: newRide.pickup_address,
-          dropoff_address: newRide.dropoff_address,
-          fare: newRide.fare,
-          status: newRide.status
-        }
-      });
+    // Execute the raw SQL query
+    const results = await sequelize.query(query, {
+      bind: values,
+      type: QueryTypes.SELECT
+    });
 
-    } catch (sequelizeError) {
-      console.error('❌ Sequelize create failed:', sequelizeError.message);
-      console.error('SQL Error:', sequelizeError.sql);
-      
-      // Method 2: Fallback to raw SQL
-      console.log('Attempting raw SQL insert...');
-      
-      const query = `
-        INSERT INTO rides (
-          service_type, customer_name, customer_phone,
-          pickup_address, pickup_coordinates,
-          dropoff_address, dropoff_coordinates,
-          ride_type, vehicle_type, payment_method,
-          estimated_distance, estimated_duration, fare,
-          status, driver_id, driver_name, driver_phone,
-          delivery_details, ride_started, ride_completed,
-          created_at, updated_at
-        ) VALUES (
-          $1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
-          $11, $12, $13, $14, $15, $16, $17, $18, $19, $20,
-          NOW(), NOW()
-        )
-        RETURNING id, service_type, customer_name, customer_phone, 
-                  pickup_address, dropoff_address, fare, status;
-      `;
+    const newRide = results[0];
+    
+    console.log('========================================');
+    console.log('✅ RIDE CREATED SUCCESSFULLY');
+    console.log('========================================');
+    console.log('🆔 Ride ID:', newRide.id);
+    console.log('👤 Customer:', newRide.customer_name);
+    console.log('📞 Phone:', newRide.customer_phone);
+    console.log('🚀 Service Type:', newRide.service_type);
+    console.log('💰 Fare:', newRide.fare);
+    console.log('📍 Status:', newRide.status);
+    console.log('========================================\n');
 
-      const values = [
-        rideData.service_type,
-        rideData.customer_name,
-        rideData.customer_phone,
-        rideData.pickup_address,
-        rideData.pickup_coordinates,
-        rideData.dropoff_address,
-        rideData.dropoff_coordinates,
-        rideData.ride_type,
-        rideData.vehicle_type,
-        rideData.payment_method,
-        rideData.estimated_distance,
-        rideData.estimated_duration,
-        rideData.fare,
-        rideData.status,
-        rideData.driver_id,
-        rideData.driver_name,
-        rideData.driver_phone,
-        rideData.delivery_details ? JSON.stringify(rideData.delivery_details) : null,
-        rideData.ride_started,
-        rideData.ride_completed
-      ];
-
-      console.log('Raw SQL values:', values);
-
-      const [results] = await sequelize.query(query, {
-        bind: values,
-        type: sequelize.QueryTypes.INSERT
-      });
-
-      const newRide = results[0];
-      console.log('✅ Ride created successfully with raw SQL:', newRide.id);
-
-      return res.json({
-        success: true,
-        message: 'تم إنشاء الطلب بنجاح',
-        ride: newRide
-      });
-    }
+    res.json({
+      success: true,
+      message: 'تم إنشاء الطلب بنجاح',
+      ride: {
+        id: newRide.id,
+        service_type: newRide.service_type,
+        customer_name: newRide.customer_name,
+        customer_phone: newRide.customer_phone,
+        pickup_address: newRide.pickup_address,
+        dropoff_address: newRide.dropoff_address,
+        fare: newRide.fare,
+        status: newRide.status,
+        created_at: newRide.created_at
+      }
+    });
 
   } catch (error) {
-    console.error('=== PUBLIC RIDE REQUEST ERROR ===');
-    console.error('Error name:', error.name);
-    console.error('Error message:', error.message);
-    console.error('Error stack:', error.stack);
+    console.log('========================================');
+    console.error('❌ RIDE CREATION FAILED');
+    console.log('========================================');
+    console.error('Error Type:', error.name);
+    console.error('Error Message:', error.message);
     
-    if (error.parent) {
-      console.error('Parent error:', error.parent);
+    if (error.original) {
+      console.error('Original Error:', error.original.message);
+      console.error('SQL State:', error.original.code);
     }
     
     if (error.sql) {
-      console.error('SQL:', error.sql);
+      console.error('Failed SQL:', error.sql);
     }
+    
+    console.error('Stack Trace:', error.stack);
+    console.log('========================================\n');
 
     res.status(500).json({
       success: false,
       message: 'فشل في إرسال الطلب. يرجى المحاولة مرة أخرى.',
       ...(process.env.NODE_ENV === 'development' && {
         error: error.message,
-        sql: error.sql
+        errorType: error.name
       })
     });
   }
@@ -240,10 +202,22 @@ router.post('/rides', async (req, res) => {
 // Get all rides (public - for testing)
 router.get('/rides', async (req, res) => {
   try {
-    const rides = await Ride.findAll({
-      order: [['created_at', 'DESC']],
-      limit: 50
+    console.log('📋 Fetching all rides...');
+    
+    const query = `
+      SELECT id, service_type, customer_name, customer_phone,
+             pickup_address, dropoff_address, fare, status,
+             created_at, updated_at
+      FROM rides
+      ORDER BY created_at DESC
+      LIMIT 50
+    `;
+    
+    const rides = await sequelize.query(query, {
+      type: QueryTypes.SELECT
     });
+
+    console.log(`✅ Retrieved ${rides.length} rides`);
 
     res.json({
       success: true,
@@ -252,7 +226,7 @@ router.get('/rides', async (req, res) => {
     });
 
   } catch (error) {
-    console.error('Get rides error:', error);
+    console.error('❌ Get rides error:', error.message);
     res.status(500).json({
       success: false,
       message: 'فشل في جلب الطلبات'
