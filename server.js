@@ -40,8 +40,7 @@ app.use(helmet({
   crossOriginResourcePolicy: false,
 }));
 
-// Replace lines 44-58 in your server.js with this updated CORS configuration:
-
+// CORS Configuration
 const corsOptions = {
   origin: [
     'https://togo-5202e.web.app',           // Your Firebase production app
@@ -67,7 +66,7 @@ const corsOptions = {
 
 app.use(cors(corsOptions));
 
-// Keep the OPTIONS handler as is
+// OPTIONS handler
 app.use((req, res, next) => {
   if (req.method === 'OPTIONS') {
     res.header('Access-Control-Allow-Origin', req.headers.origin);
@@ -167,7 +166,6 @@ app.get('/api/debug/db-status', async (req, res) => {
     let orderCount = 0;
     let prescriptionCount = 0;
     let rideCount = 0;
-    let deliveryCount = 0;
     
     try {
       restaurantCount = await Restaurant.count();
@@ -205,12 +203,6 @@ app.get('/api/debug/db-status', async (req, res) => {
       console.warn('Ride model not available');
     }
 
-    try {
-      deliveryCount = await Delivery.count();
-    } catch (e) {
-      console.warn('Delivery model not available');
-    }
-
     const recentUsers = await User.findAll({ 
       limit: 5, 
       order: [['createdAt', 'DESC']],
@@ -243,7 +235,6 @@ app.get('/api/debug/db-status', async (req, res) => {
         orderCount,
         prescriptionCount,
         rideCount,
-        deliveryCount,
         recentUsers,
         file: dbFileInfo
       },
@@ -531,6 +522,7 @@ app.get('/health', async (req, res) => {
   }
 });
 
+// 404 Handler
 app.use((req, res, next) => {
   res.status(404).json({
     success: false,
@@ -539,6 +531,7 @@ app.use((req, res, next) => {
   });
 });
 
+// Error Handler
 app.use((err, req, res, next) => {
   console.error('خطأ في الخادم:', err);
 
@@ -596,7 +589,7 @@ const startServer = async () => {
       }
     }
 
-    // Initialize database with associations - replaces manual association setup
+    // Initialize database with associations
     await initializeDatabase();
 
     const server = app.listen(PORT, () => {
@@ -614,9 +607,12 @@ const startServer = async () => {
       console.log(`🍽️  Restaurants endpoint: http://localhost:${PORT}/api/restaurants`);
       console.log(`🍕 Menu Items endpoint: http://localhost:${PORT}/api/menu-items`);
       console.log(`💊 Prescriptions endpoint: http://localhost:${PORT}/api/prescriptions`);
-      console.log(`🧪 Test driver user: http://localhost:${PORT}/debug/create-driver-user`);
-      console.log(`🧪 Test pharmacy user: http://localhost:${PORT}/debug/create-pharmacy-user`);
-      console.log(`🧪 Test delivery user: http://localhost:${PORT}/debug/create-delivery-user`);
+      
+      if (process.env.NODE_ENV === 'development') {
+        console.log(`🧪 Test driver user: http://localhost:${PORT}/debug/create-driver-user`);
+        console.log(`🧪 Test pharmacy user: http://localhost:${PORT}/debug/create-pharmacy-user`);
+        console.log(`🧪 Test delivery user: http://localhost:${PORT}/debug/create-delivery-user`);
+      }
       
       if (sequelize.getDialect() === 'sqlite' && sequelize.config.storage) {
         console.log(`🗄️  Database file: ${sequelize.config.storage}`);
