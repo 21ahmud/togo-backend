@@ -1,4 +1,4 @@
-// src/routes/rides.js
+// src/routes/rides.js - FIXED FOR DRIVER DASHBOARD
 const express = require('express');
 const { Op } = require('sequelize');
 const User = require('../models/User');
@@ -27,90 +27,7 @@ router.get('/test', async (req, res) => {
   }
 });
 
-// PUBLIC: Create a new ride request (no auth required)
-router.post('/', async (req, res) => {
-  try {
-    console.log('Received ride booking request:', JSON.stringify(req.body, null, 2));
-
-    const {
-      service_type,
-      customer_name,
-      customer_phone,
-      pickup_address,
-      pickup_coordinates,
-      dropoff_address,
-      dropoff_coordinates,
-      ride_type,
-      vehicle_type,
-      payment_method,
-      estimated_distance,
-      estimated_duration,
-      fare,
-      delivery_details
-    } = req.body;
-
-    // Validate required fields
-    if (!customer_name || !customer_phone || !pickup_address || !dropoff_address) {
-      console.log('Validation failed: Missing required fields');
-      return res.status(400).json({
-        success: false,
-        message: 'البيانات المطلوبة ناقصة'
-      });
-    }
-
-    // Log coordinates for debugging
-    console.log('Pickup coordinates:', pickup_coordinates);
-    console.log('Dropoff coordinates:', dropoff_coordinates);
-
-    // Create new ride in database
-    const newRide = await Ride.create({
-      service_type: service_type || 'ride',
-      customer_name,
-      customer_phone,
-      pickup_address,
-      pickup_coordinates: pickup_coordinates || null,
-      dropoff_address,
-      dropoff_coordinates: dropoff_coordinates || null,
-      ride_type,
-      vehicle_type,
-      payment_method: payment_method || 'cash',
-      estimated_distance,
-      estimated_duration,
-      fare: parseFloat(fare) || 0,
-      status: 'pending',
-      driver_id: null,
-      driver_name: null,
-      driver_phone: null,
-      delivery_details: delivery_details || null
-    });
-
-    console.log('New ride created successfully:', {
-      id: newRide.id,
-      service_type: newRide.service_type,
-      customer: newRide.customer_name,
-      ride_type: newRide.ride_type
-    });
-
-    res.status(201).json({
-      success: true,
-      message: 'تم إنشاء الطلب بنجاح',
-      ride: newRide
-    });
-
-  } catch (error) {
-    console.error('Create ride error details:', error);
-    console.error('Error stack:', error.stack);
-    
-    res.status(500).json({
-      success: false,
-      message: 'فشل في إنشاء الطلب',
-      error: process.env.NODE_ENV === 'development' ? error.message : undefined
-    });
-  }
-});
-
-// Rest of the routes remain the same...
-// Get all rides - Requires authentication
+// Get all rides - Requires authentication - FIXED VERSION
 router.get('/', auth, async (req, res) => {
   try {
     console.log('Fetching rides for user:', req.user.id, 'role:', req.user.role);
@@ -118,15 +35,7 @@ router.get('/', auth, async (req, res) => {
     let whereClause = {};
     
     if (req.user.role === 'driver') {
-      const driver = await User.findByPk(req.user.id);
-      
-      if (!driver) {
-        return res.status(404).json({
-          success: false,
-          message: 'بيانات السائق غير موجودة'
-        });
-      }
-
+      // Drivers see: their assigned rides + pending rides
       whereClause = {
         [Op.or]: [
           { driver_id: req.user.id },
@@ -139,55 +48,59 @@ router.get('/', auth, async (req, res) => {
     } else if (req.user.role === 'admin') {
       // Admins see all rides
     } else {
+      // Regular customers see their own rides
       whereClause = {
         customer_phone: req.user.phone
       };
     }
 
+    // Fetch rides WITHOUT associations to avoid errors
     const allRides = await Ride.findAll({
       where: whereClause,
-      include: [
-        {
-          model: User,
-          as: 'driver',
-          attributes: ['id', 'name', 'phone', 'vehicle'],
-          required: false
-        }
-      ],
-      order: [['created_at', 'DESC']]
+      order: [['created_at', 'DESC']],
+      raw: true // Return plain objects, no associations
     });
 
-    let filteredRides = allRides;
-
-    if (req.user.role === 'driver') {
-      const driver = await User.findByPk(req.user.id);
-      
-      filteredRides = allRides.filter(ride => {
-        if (ride.driver_id === req.user.id) {
-          return true;
+    // If driver is assigned, manually fetch driver details
+    const ridesWithDriverInfo = await Promise.all(
+      allRides.map(async (ride) => {
+        if (ride.driver_id) {
+          try {
+            const driver = await User.findByPk(ride.driver_id, {
+              attributes: ['id', 'name', 'phone', 'vehicle'],
+              raw: true
+            });
+            return {
+              ...ride,
+              driver: driver || null
+            };
+          } catch (err) {
+            console.error('Error fetching driver for ride:', ride.id, err);
+            return ride;
+          }
         }
-        
-        if (ride.status === 'pending' && !ride.driver_id) {
-          return isRideMatchingDriverVehicle(ride, driver.vehicle);
-        }
-        
-        return false;
-      });
-    }
+        return ride;
+      })
+    );
 
-    console.log(`Returning ${filteredRides.length} rides for user role: ${req.user.role}`);
+    console.log(`Returning ${ridesWithDriverInfo.length} rides for user role: ${req.user.role}`);
 
     res.json({
       success: true,
-      rides: filteredRides,
-      count: filteredRides.length
+      rides: ridesWithDriverInfo,
+      count: ridesWithDriverInfo.length
     });
 
   } catch (error) {
     console.error('Get rides error:', error);
+    console.error('Error stack:', error.stack);
     res.status(500).json({
       success: false,
-      message: 'فشل في جلب الطلبات'
+      message: 'فشل في جلب الطلبات',
+      ...(process.env.NODE_ENV === 'development' && {
+        error: error.message,
+        stack: error.stack
+      })
     });
   }
 });
@@ -209,28 +122,38 @@ router.put('/:id', auth, async (req, res) => {
       });
     }
 
+    // Permission checks
     if (req.user.role === 'driver') {
+      // Drivers can accept pending rides or update their assigned rides
       if (ride.status === 'pending' && !ride.driver_id && updates.status === 'accepted') {
+        // Driver accepting a ride
         const driver = await User.findByPk(req.user.id);
-        if (!driver || !isRideMatchingDriverVehicle(ride, driver.vehicle)) {
+        if (!driver) {
           return res.status(403).json({
             success: false,
-            message: 'هذا الطلب غير متطابق مع نوع مركبتك'
+            message: 'بيانات السائق غير موجودة'
           });
         }
+        // Add driver info to updates
+        updates.driver_id = req.user.id;
+        updates.driver_name = driver.name;
+        updates.driver_phone = driver.phone;
       } else if (ride.driver_id && ride.driver_id !== req.user.id) {
+        // Driver trying to update someone else's ride
         return res.status(403).json({
           success: false,
           message: 'لا يمكنك تعديل طلب سائق آخر'
         });
       }
     } else if (req.user.role !== 'admin') {
+      // Regular users can't update rides
       return res.status(403).json({
         success: false,
         message: 'غير مُخوَّل لتعديل الطلبات'
       });
     }
 
+    // Update the ride
     await ride.update(updates);
     await ride.reload();
 
@@ -259,16 +182,7 @@ router.put('/:id', auth, async (req, res) => {
 router.get('/:id', auth, async (req, res) => {
   try {
     const rideId = parseInt(req.params.id);
-    const ride = await Ride.findByPk(rideId, {
-      include: [
-        {
-          model: User,
-          as: 'driver',
-          attributes: ['id', 'name', 'phone', 'vehicle'],
-          required: false
-        }
-      ]
-    });
+    const ride = await Ride.findByPk(rideId, { raw: true });
 
     if (!ride) {
       return res.status(404).json({
@@ -277,6 +191,20 @@ router.get('/:id', auth, async (req, res) => {
       });
     }
 
+    // Fetch driver info if assigned
+    if (ride.driver_id) {
+      try {
+        const driver = await User.findByPk(ride.driver_id, {
+          attributes: ['id', 'name', 'phone', 'vehicle'],
+          raw: true
+        });
+        ride.driver = driver;
+      } catch (err) {
+        console.error('Error fetching driver:', err);
+      }
+    }
+
+    // Permission checks
     let canAccess = false;
     
     if (req.user.role === 'admin') {
@@ -338,48 +266,6 @@ router.delete('/:id', auth, requireRole(['admin']), async (req, res) => {
   }
 });
 
-// Helper function to match ride with driver vehicle
-function isRideMatchingDriverVehicle(ride, driverVehicle) {
-  if (!driverVehicle || !ride.ride_type) return false;
-  
-  const vehicleTypeMapping = {
-    'سكوتر': ['scooter', 'bike', 'سكوتر', 'دراجة'],
-    'scooter': ['scooter', 'bike', 'سكوتر', 'دراجة'],
-    'دراجة': ['scooter', 'bike', 'سكوتر', 'دراجة'],
-    'bike': ['scooter', 'bike', 'سكوتر', 'دراجة'],
-    'موتوسيكل': ['scooter', 'bike', 'سكوتر', 'دراجة'],
-    'دراجة نارية': ['scooter', 'bike', 'سكوتر', 'دراجة', 'دراجة نارية'],
-    'سيارة عادية': ['standard', 'car', 'car_delivery', 'سيارة عادية', 'عادية'],
-    'car': ['standard', 'car', 'car_delivery', 'سيارة عادية', 'عادية'],
-    'عادية': ['standard', 'car', 'car_delivery', 'سيارة عادية', 'عادية'],
-    'سيارة متميزة': ['premium', 'luxury_car', 'سيارة متميزة', 'متميزة', 'فاخرة'],
-    'luxury': ['premium', 'luxury_car', 'سيارة متميزة', 'متميزة', 'فاخرة'],
-    'متميزة': ['premium', 'luxury_car', 'سيارة متميزة', 'متميزة', 'فاخرة'],
-    'فاخرة': ['premium', 'luxury_car', 'سيارة متميزة', 'متميزة', 'فاخرة'],
-    'شاحنة': ['truck', 'شاحنة', 'نقل'],
-    'truck': ['truck', 'شاحنة', 'نقل'],
-    'شاحنة صغيرة': ['truck', 'شاحنة', 'نقل', 'شاحنة صغيرة'],
-    'نقل': ['truck', 'شاحنة', 'نقل']
-  };
-
-  const driverVehicleLower = driverVehicle.toLowerCase();
-  const rideType = ride.ride_type.toLowerCase();
-  const vehicleType = ride.vehicle_type?.toLowerCase() || '';
-  
-  const driverVehicleTypes = vehicleTypeMapping[driverVehicle] || 
-                            vehicleTypeMapping[driverVehicleLower] || 
-                            [driverVehicleLower];
-  
-  const rideTypes = [rideType, vehicleType];
-  
-  return driverVehicleTypes.some(driverType => 
-    rideTypes.some(rType => 
-      driverType.includes(rType) || rType.includes(driverType) ||
-      driverType === rType
-    )
-  );
-}
-
 // Get rides statistics - Admin only
 router.get('/stats/overview', auth, requireRole(['admin']), async (req, res) => {
   try {
@@ -397,25 +283,27 @@ router.get('/stats/overview', auth, requireRole(['admin']), async (req, res) => 
     
     const completedRidesWithFare = await Ride.findAll({
       where: { status: 'completed' },
-      attributes: ['fare']
+      attributes: ['fare'],
+      raw: true
     });
     
     const totalRevenue = completedRidesWithFare.reduce((sum, ride) => {
       return sum + (parseFloat(ride.fare) || 0);
     }, 0);
 
-    const { sequelize } = require('../config/database');
+    const sequelize = require('../config/database');
     const rideTypeCounts = await Ride.findAll({
       attributes: [
         'service_type',
         [sequelize.fn('COUNT', sequelize.col('service_type')), 'count']
       ],
-      group: ['service_type']
+      group: ['service_type'],
+      raw: true
     });
 
     const rideTypes = {};
     rideTypeCounts.forEach(item => {
-      rideTypes[item.service_type] = parseInt(item.getDataValue('count'));
+      rideTypes[item.service_type] = parseInt(item.count);
     });
 
     res.json({
