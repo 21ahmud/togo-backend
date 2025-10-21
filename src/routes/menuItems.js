@@ -43,7 +43,7 @@ router.get('/', async (req, res) => {
       where: whereClause,
       order: [
         ['is_popular', 'DESC'],
-        ['createdAt', 'DESC']
+        ['id', 'DESC']  // 🔥 Changed from createdAt to id
       ]
     });
 
@@ -448,7 +448,7 @@ router.get('/restaurant/:restaurantId', [
       where: whereClause,
       order: [
         ['is_popular', 'DESC'],
-        ['createdAt', 'DESC']
+        ['id', 'DESC']  // 🔥 Changed from createdAt to id
       ]
     });
 

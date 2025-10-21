@@ -90,26 +90,10 @@ const MenuItem = sequelize.define('MenuItem', {
       model: 'users',
       key: 'id'
     }
-  },
-  // Explicitly define timestamp fields to match database
-  createdAt: {
-    type: DataTypes.DATE,
-    field: 'createdAt',  // Database column name (camelCase)
-    allowNull: false,
-    defaultValue: DataTypes.NOW
-  },
-  updatedAt: {
-    type: DataTypes.DATE,
-    field: 'updatedAt',  // Database column name (camelCase)
-    allowNull: false,
-    defaultValue: DataTypes.NOW
   }
 }, {
   tableName: 'menu_items',
-  timestamps: true,
-  // Tell Sequelize the exact column names for timestamps
-  createdAt: 'createdAt',
-  updatedAt: 'updatedAt',
+  timestamps: false,  // Disable automatic timestamp handling to avoid column name conflicts
   indexes: [
     {
       fields: ['restaurant_email']
