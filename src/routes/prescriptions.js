@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
-const Prescription = require('../models/Prescription'); // Import the new model
-const { authenticateToken, requireAdmin, requireRole } = require('../middleware/auth');
+const Prescription = require('../models/Prescription');
+const { authenticateToken, requireAdmin } = require('../middleware/auth');
 const { Op } = require('sequelize');
 
 // GET /api/prescriptions - Get all prescriptions (admin only)
@@ -36,7 +36,8 @@ router.get('/', authenticateToken, async (req, res) => {
     console.error('Error fetching prescriptions:', error);
     res.status(500).json({
       success: false,
-      message: 'خطأ في استرجاع الروشتات'
+      message: 'خطأ في استرجاع الروشتات',
+      error: error.message
     });
   }
 });
@@ -54,11 +55,9 @@ router.get('/pharmacy/:pharmacyId', authenticateToken, async (req, res) => {
       });
     }
 
+    // FIXED: Corrected the where clause structure
     const whereClause = {
-      [Op.or]: [
-        { pharmacyId: pharmacyId },
-        { pharmacyEmail: req.user.email }
-      ]
+      pharmacyId: pharmacyId
     };
 
     const pharmacyPrescriptions = await Prescription.findAll({
@@ -75,7 +74,8 @@ router.get('/pharmacy/:pharmacyId', authenticateToken, async (req, res) => {
     console.error('Error fetching pharmacy prescriptions:', error);
     res.status(500).json({
       success: false,
-      message: 'خطأ في استرجاع الروشتات'
+      message: 'خطأ في استرجاع الروشتات',
+      error: error.message
     });
   }
 });
@@ -142,7 +142,8 @@ router.post('/', async (req, res) => {
     console.error('Error creating prescription:', error);
     res.status(500).json({
       success: false,
-      message: 'فشل في إرسال الروشتة'
+      message: 'فشل في إرسال الروشتة',
+      error: error.message
     });
   }
 });
@@ -178,7 +179,8 @@ router.get('/:id', authenticateToken, async (req, res) => {
     console.error('Error fetching prescription:', error);
     res.status(500).json({
       success: false,
-      message: 'خطأ في استرجاع الروشتة'
+      message: 'خطأ في استرجاع الروشتة',
+      error: error.message
     });
   }
 });
@@ -257,7 +259,8 @@ router.put('/:id', authenticateToken, async (req, res) => {
     console.error('Error updating prescription status:', error);
     res.status(500).json({
       success: false,
-      message: 'فشل في تحديث حالة الروشتة'
+      message: 'فشل في تحديث حالة الروشتة',
+      error: error.message
     });
   }
 });
@@ -327,7 +330,8 @@ router.put('/:id/status', authenticateToken, async (req, res) => {
     console.error('Error updating prescription status:', error);
     res.status(500).json({
       success: false,
-      message: 'فشل في تحديث حالة الروشتة'
+      message: 'فشل في تحديث حالة الروشتة',
+      error: error.message
     });
   }
 });
@@ -356,7 +360,8 @@ router.delete('/:id', requireAdmin, async (req, res) => {
     console.error('Error deleting prescription:', error);
     res.status(500).json({
       success: false,
-      message: 'فشل في حذف الروشتة'
+      message: 'فشل في حذف الروشتة',
+      error: error.message
     });
   }
 });
