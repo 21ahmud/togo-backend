@@ -1,4 +1,4 @@
-// src/models/Order.js - Fixed Order Model with Proper ID Generation
+// models/Order.js - Fixed Order Model WITHOUT setters
 const { DataTypes, Op } = require('sequelize');
 const sequelize = require('../config/database');
 
@@ -8,7 +8,6 @@ const Order = sequelize.define('Order', {
     primaryKey: true,
     autoIncrement: true,
     allowNull: false,
-    // Add explicit validation to ensure ID is always set
     validate: {
       notNull: {
         msg: 'Order ID cannot be null'
@@ -59,6 +58,7 @@ const Order = sequelize.define('Order', {
   customer_location: {
     type: DataTypes.TEXT,
     allowNull: true,
+    // ✅ Only getter, no setter
     get() {
       const value = this.getDataValue('customer_location');
       if (!value) return null;
@@ -68,40 +68,28 @@ const Order = sequelize.define('Order', {
         console.error('Error parsing customer_location JSON:', e);
         return null;
       }
-    },
-    set(value) {
-      if (value === null || value === undefined) {
-        this.setDataValue('customer_location', null);
-      } else {
-        this.setDataValue('customer_location', JSON.stringify(value));
-      }
     }
   },
   
+  // ✅ CRITICAL: Remove setters for items, restaurants, restaurant_emails
   items: {
-  type: DataTypes.TEXT,
-  allowNull: false,
-  validate: {
-    notEmpty: true
-  },
-  get() {
-    const value = this.getDataValue('items');
-    if (!value) return [];
-    try {
-      const parsed = JSON.parse(value);
-      return Array.isArray(parsed) ? parsed : [];
-    } catch (e) {
-      console.error('Error parsing items JSON:', e);
-      return [];
-    }
-  },
-    set(value) {
-      if (Array.isArray(value)) {
-        this.setDataValue('items', JSON.stringify(value));
-      } else {
-        this.setDataValue('items', JSON.stringify([]));
+    type: DataTypes.TEXT,
+    allowNull: false,
+    validate: {
+      notEmpty: true
+    },
+    get() {
+      const value = this.getDataValue('items');
+      if (!value) return [];
+      try {
+        const parsed = JSON.parse(value);
+        return Array.isArray(parsed) ? parsed : [];
+      } catch (e) {
+        console.error('Error parsing items JSON:', e);
+        return [];
       }
     }
+    // ✅ NO SETTER - we stringify manually in the route
   },
   
   restaurants: {
@@ -118,14 +106,8 @@ const Order = sequelize.define('Order', {
         console.error('Error parsing restaurants JSON:', e);
         return [];
       }
-    },
-    set(value) {
-      if (Array.isArray(value)) {
-        this.setDataValue('restaurants', JSON.stringify(value));
-      } else {
-        this.setDataValue('restaurants', JSON.stringify([]));
-      }
     }
+    // ✅ NO SETTER - we stringify manually in the route
   },
   
   subtotal: {
@@ -278,14 +260,8 @@ const Order = sequelize.define('Order', {
         console.error('Error parsing restaurant_emails JSON:', e);
         return [];
       }
-    },
-    set(value) {
-      if (Array.isArray(value)) {
-        this.setDataValue('restaurant_emails', JSON.stringify(value));
-      } else {
-        this.setDataValue('restaurant_emails', JSON.stringify([]));
-      }
     }
+    // ✅ NO SETTER - we stringify manually in the route
   },
   
   locationAccuracy: {
@@ -303,7 +279,6 @@ const Order = sequelize.define('Order', {
     allowNull: false
   },
   
-  // Additional fields for better tracking
   cancelled_reason: {
     type: DataTypes.TEXT,
     allowNull: true
@@ -360,28 +335,24 @@ const Order = sequelize.define('Order', {
   ],
   hooks: {
     beforeCreate: (order, options) => {
-      // Ensure status is valid for new orders
       if (!order.status || !['pending_assignment', 'assigned'].includes(order.status)) {
         order.status = 'pending_assignment';
       }
-      
-      console.log('Order before create hook - ID:', order.id);
+      console.log('[ORDER MODEL] Before create - data types:', {
+        items: typeof order.getDataValue('items'),
+        restaurants: typeof order.getDataValue('restaurants'),
+        restaurant_emails: typeof order.getDataValue('restaurant_emails')
+      });
     },
     
     afterCreate: (order, options) => {
-      console.log('Order after create hook - ID:', order.id, 'Type:', typeof order.id);
-      
-      // Validate that the order was created with a valid ID
+      console.log('[ORDER MODEL] After create - Order ID:', order.id);
       if (!order.id || order.id === null || order.id === undefined) {
-        console.error('CRITICAL: Order created without valid ID!', {
-          orderId: order.id,
-          orderData: order.toJSON()
-        });
+        console.error('[ORDER MODEL] CRITICAL: Order created without valid ID!');
         throw new Error('Order creation failed: No valid ID assigned');
       }
     }
   }
 });
 
-// Export the model
 module.exports = Order;
