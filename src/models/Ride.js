@@ -1,4 +1,4 @@
-// src/models/Ride.js - COMPLETE FIX
+// src/models/Ride.js - CORRECTED FOR UUID
 const { DataTypes } = require('sequelize');
 const sequelize = require('../config/database');
 
@@ -9,19 +9,16 @@ const Ride = sequelize.define('Ride', {
     autoIncrement: true
   },
   service_type: {
-    type: DataTypes.STRING,
+    type: DataTypes.STRING(50),
     allowNull: false,
-    defaultValue: 'ride',
-    validate: {
-      isIn: [['ride', 'delivery']]
-    }
+    defaultValue: 'ride'
   },
   customer_name: {
-    type: DataTypes.STRING,
+    type: DataTypes.STRING(255),
     allowNull: false
   },
   customer_phone: {
-    type: DataTypes.STRING,
+    type: DataTypes.STRING(20),
     allowNull: false
   },
   pickup_address: {
@@ -29,7 +26,7 @@ const Ride = sequelize.define('Ride', {
     allowNull: false
   },
   pickup_coordinates: {
-    type: DataTypes.STRING,
+    type: DataTypes.TEXT, // Stores as "lat, lng"
     allowNull: true
   },
   dropoff_address: {
@@ -37,31 +34,28 @@ const Ride = sequelize.define('Ride', {
     allowNull: false
   },
   dropoff_coordinates: {
-    type: DataTypes.STRING,
+    type: DataTypes.TEXT, // Stores as "lat, lng"
     allowNull: true
   },
   ride_type: {
-    type: DataTypes.STRING,
+    type: DataTypes.STRING(50),
     allowNull: true
   },
   vehicle_type: {
-    type: DataTypes.STRING,
+    type: DataTypes.STRING(50),
     allowNull: true
   },
   payment_method: {
-    type: DataTypes.STRING,
+    type: DataTypes.STRING(50),
     allowNull: false,
-    defaultValue: 'cash',
-    validate: {
-      isIn: [['cash', 'card', 'wallet']]
-    }
+    defaultValue: 'cash'
   },
   estimated_distance: {
-    type: DataTypes.STRING,
+    type: DataTypes.STRING(50),
     allowNull: true
   },
   estimated_duration: {
-    type: DataTypes.STRING,
+    type: DataTypes.STRING(50),
     allowNull: true
   },
   fare: {
@@ -70,15 +64,13 @@ const Ride = sequelize.define('Ride', {
     defaultValue: 0.00
   },
   status: {
-    type: DataTypes.STRING,
+    type: DataTypes.STRING(50),
     allowNull: false,
-    defaultValue: 'pending',
-    validate: {
-      isIn: [['pending', 'accepted', 'in_progress', 'completed', 'cancelled']]
-    }
+    defaultValue: 'pending'
   },
+  // CRITICAL: Changed to UUID to match users table
   driver_id: {
-    type: DataTypes.INTEGER,
+    type: DataTypes.UUID,
     allowNull: true,
     references: {
       model: 'users',
@@ -86,11 +78,11 @@ const Ride = sequelize.define('Ride', {
     }
   },
   driver_name: {
-    type: DataTypes.STRING,
+    type: DataTypes.STRING(255),
     allowNull: true
   },
   driver_phone: {
-    type: DataTypes.STRING,
+    type: DataTypes.STRING(20),
     allowNull: true
   },
   delivery_details: {
@@ -121,8 +113,7 @@ const Ride = sequelize.define('Ride', {
   tableName: 'rides',
   timestamps: true,
   createdAt: 'created_at',
-  updatedAt: 'updated_at',
-  underscored: false // Keep false to match your existing column names
+  updatedAt: 'updated_at'
 });
 
 module.exports = Ride;
