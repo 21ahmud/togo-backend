@@ -68,17 +68,17 @@ const setupAssociations = () => {
       console.log('  ✓ User-Restaurant associations');
     }
 
-    // Restaurant - MenuItem associations ✅ FIXED
+    // Restaurant - MenuItem associations
     if (Restaurant && MenuItem) {
       Restaurant.hasMany(MenuItem, { 
-        foreignKey: 'restaurant_id',  // ✅ Changed from 'restaurantId' to 'restaurant_id'
+        foreignKey: 'restaurant_id',
         as: 'menuItems',
-        constraints: false  // ✅ Don't enforce FK constraint
+        constraints: false
       });
       MenuItem.belongsTo(Restaurant, { 
-        foreignKey: 'restaurant_id',  // ✅ Changed from 'restaurantId' to 'restaurant_id'
+        foreignKey: 'restaurant_id',
         as: 'restaurant',
-        constraints: false  // ✅ Don't enforce FK constraint
+        constraints: false
       });
       console.log('  ✓ Restaurant-MenuItem associations');
     }
@@ -97,19 +97,26 @@ const setupAssociations = () => {
       console.log('  ✓ User-Pharmacy associations');
     }
 
-    // Pharmacy - Prescription associations
+    // ✅ FIXED: Pharmacy - Prescription associations
     if (Pharmacy && Prescription) {
-      Pharmacy.hasMany(Prescription, { foreignKey: 'pharmacyId', as: 'prescriptions' });
-      Prescription.belongsTo(Pharmacy, { foreignKey: 'pharmacyId', as: 'pharmacy' });
+      Pharmacy.hasMany(Prescription, { 
+        foreignKey: 'pharmacy_id',  // ✅ Changed to match database column
+        as: 'prescriptions' 
+      });
+      Prescription.belongsTo(Pharmacy, { 
+        foreignKey: 'pharmacy_id',  // ✅ Changed to match database column
+        as: 'pharmacy' 
+      });
       console.log('  ✓ Pharmacy-Prescription associations');
     }
 
-    // User - Prescription associations
-    if (User && Prescription) {
-      User.hasMany(Prescription, { foreignKey: 'userId', as: 'userPrescriptions' });
-      Prescription.belongsTo(User, { foreignKey: 'userId', as: 'customer' });
-      console.log('  ✓ User-Prescription associations');
-    }
+    // ✅ REMOVED: User - Prescription associations (causes userId column error)
+    // The prescriptions table only has pharmacy_id, not userId
+    // if (User && Prescription) {
+    //   User.hasMany(Prescription, { foreignKey: 'userId', as: 'userPrescriptions' });
+    //   Prescription.belongsTo(User, { foreignKey: 'userId', as: 'customer' });
+    //   console.log('  ✓ User-Prescription associations');
+    // }
 
     // Pharmacy - Order associations
     if (Pharmacy && Order) {
@@ -125,7 +132,7 @@ const setupAssociations = () => {
   }
 };
 
-// Initialize database and models - FIXED VERSION
+// Initialize database and models
 const initializeDatabase = async () => {
   try {
     console.log('🔄 Syncing database...');
@@ -172,7 +179,7 @@ const initializeDatabase = async () => {
     
     // Sync with more conservative options for SQLite
     const syncOptions = {
-      alter: dialect === 'sqlite' ? false : isDevelopment, // Disable alter for SQLite
+      alter: dialect === 'sqlite' ? false : isDevelopment,
       force: false,
       logging: console.log
     };

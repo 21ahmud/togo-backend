@@ -4,7 +4,7 @@ const Prescription = require('../models/Prescription');
 const { authenticateToken, requireAdmin } = require('../middleware/auth');
 const { Op } = require('sequelize');
 
-// GET /api/prescriptions - Get all prescriptions (admin only)
+// GET /api/prescriptions - Get all prescriptions
 router.get('/', authenticateToken, async (req, res) => {
   try {
     // Only admin and pharmacy owners can see prescriptions
@@ -22,9 +22,12 @@ router.get('/', authenticateToken, async (req, res) => {
       whereClause.pharmacyEmail = req.user.email;
     }
 
+    // CRITICAL: Use raw: false and don't include any associations to avoid userId error
     const prescriptions = await Prescription.findAll({
       where: whereClause,
-      order: [['createdAt', 'DESC']]
+      order: [['createdAt', 'DESC']],
+      raw: false,
+      attributes: { exclude: [] } // Get all attributes but no associations
     });
 
     res.json({
@@ -55,14 +58,14 @@ router.get('/pharmacy/:pharmacyId', authenticateToken, async (req, res) => {
       });
     }
 
-    // FIXED: Corrected the where clause structure
-    const whereClause = {
-      pharmacyId: pharmacyId
-    };
-
+    // CRITICAL: Simple where clause, no associations
     const pharmacyPrescriptions = await Prescription.findAll({
-      where: whereClause,
-      order: [['createdAt', 'DESC']]
+      where: {
+        pharmacyId: pharmacyId
+      },
+      order: [['createdAt', 'DESC']],
+      raw: false,
+      attributes: { exclude: [] }
     });
 
     res.json({
