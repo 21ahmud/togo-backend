@@ -152,9 +152,9 @@ router.post('/', authenticateToken, async (req, res) => {
       customer_location: req.body.customer_location ? safeStringify(req.body.customer_location) : null,
       
       // ✅ STRINGIFY ARRAYS BEFORE SAVING
-      items: safeStringify(items),
-      restaurants: safeStringify(restaurants || []),
-      restaurant_emails: safeStringify(restaurant_emails || []),
+     items: safeStringify(items),
+restaurants: safeStringify(restaurants || []),
+restaurant_emails: safeStringify(restaurant_emails || []),
       
       subtotal: parseFloat(subtotal),
       delivery_fee: parseFloat(delivery_fee || 0),
