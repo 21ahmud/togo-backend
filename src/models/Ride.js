@@ -1,4 +1,4 @@
-// src/models/Ride.js - FIXED VERSION
+// src/models/Ride.js - COMPLETE FIX
 const { DataTypes } = require('sequelize');
 const sequelize = require('../config/database');
 
@@ -29,7 +29,7 @@ const Ride = sequelize.define('Ride', {
     allowNull: false
   },
   pickup_coordinates: {
-    type: DataTypes.STRING, // Changed from JSON to STRING to match your data
+    type: DataTypes.STRING,
     allowNull: true
   },
   dropoff_address: {
@@ -37,7 +37,7 @@ const Ride = sequelize.define('Ride', {
     allowNull: false
   },
   dropoff_coordinates: {
-    type: DataTypes.STRING, // Changed from JSON to STRING to match your data
+    type: DataTypes.STRING,
     allowNull: true
   },
   ride_type: {
@@ -77,24 +77,13 @@ const Ride = sequelize.define('Ride', {
       isIn: [['pending', 'accepted', 'in_progress', 'completed', 'cancelled']]
     }
   },
-  // CRITICAL: Match the association foreign keys from models/index.js
-  userId: {
+  driver_id: {
     type: DataTypes.INTEGER,
     allowNull: true,
     references: {
       model: 'users',
       key: 'id'
-    },
-    field: 'driver_id' // Maps userId to driver_id column
-  },
-  driverId: {
-    type: DataTypes.INTEGER,
-    allowNull: true,
-    references: {
-      model: 'users',
-      key: 'id'
-    },
-    field: 'driver_id' // Both map to the same column
+    }
   },
   driver_name: {
     type: DataTypes.STRING,
@@ -105,7 +94,7 @@ const Ride = sequelize.define('Ride', {
     allowNull: true
   },
   delivery_details: {
-    type: DataTypes.JSONB, // Use JSONB for PostgreSQL
+    type: DataTypes.JSONB,
     allowNull: true
   },
   accepted_at: {
@@ -133,7 +122,7 @@ const Ride = sequelize.define('Ride', {
   timestamps: true,
   createdAt: 'created_at',
   updatedAt: 'updated_at',
-  underscored: true // This ensures snake_case is used consistently
+  underscored: false // Keep false to match your existing column names
 });
 
 module.exports = Ride;
