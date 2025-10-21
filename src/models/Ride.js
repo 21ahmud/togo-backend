@@ -1,4 +1,4 @@
-// src/models/Ride.js
+// src/models/Ride.js - FINAL CORRECTED VERSION
 const { DataTypes } = require('sequelize');
 const sequelize = require('../config/database');
 
@@ -8,7 +8,6 @@ const Ride = sequelize.define('Ride', {
     primaryKey: true,
     autoIncrement: true
   },
-  // Service type: 'ride' or 'delivery'
   service_type: {
     type: DataTypes.STRING,
     allowNull: false,
@@ -17,7 +16,6 @@ const Ride = sequelize.define('Ride', {
       isIn: [['ride', 'delivery']]
     }
   },
-  // Customer information (always required - no userId needed for public bookings)
   customer_name: {
     type: DataTypes.STRING,
     allowNull: false
@@ -26,35 +24,31 @@ const Ride = sequelize.define('Ride', {
     type: DataTypes.STRING,
     allowNull: false
   },
-  // Pickup location
   pickup_address: {
     type: DataTypes.TEXT,
     allowNull: false
   },
   pickup_coordinates: {
-    type: DataTypes.STRING, // Changed from JSON to STRING to store "lat, lng"
+    type: DataTypes.STRING,
     allowNull: true
   },
-  // Dropoff location
   dropoff_address: {
     type: DataTypes.TEXT,
     allowNull: false
   },
   dropoff_coordinates: {
-    type: DataTypes.STRING, // Changed from JSON to STRING to store "lat, lng"
+    type: DataTypes.STRING,
     allowNull: true
   },
-  // Vehicle and ride type
   ride_type: {
-    type: DataTypes.STRING, // 'scooter', 'standard', 'premium'
+    type: DataTypes.STRING,
     allowNull: false,
     defaultValue: 'standard'
   },
   vehicle_type: {
-    type: DataTypes.STRING, // 'scooter', 'car', 'luxury_car', etc.
+    type: DataTypes.STRING,
     allowNull: true
   },
-  // Payment
   payment_method: {
     type: DataTypes.STRING,
     allowNull: false,
@@ -63,13 +57,12 @@ const Ride = sequelize.define('Ride', {
       isIn: [['cash', 'card', 'wallet']]
     }
   },
-  // Estimates
   estimated_distance: {
-    type: DataTypes.STRING, // "5.2 كم"
+    type: DataTypes.STRING,
     allowNull: true
   },
   estimated_duration: {
-    type: DataTypes.STRING, // "15 دقيقة"
+    type: DataTypes.STRING,
     allowNull: true
   },
   fare: {
@@ -77,7 +70,6 @@ const Ride = sequelize.define('Ride', {
     allowNull: false,
     defaultValue: 0.00
   },
-  // Status tracking
   status: {
     type: DataTypes.STRING,
     allowNull: false,
@@ -86,7 +78,6 @@ const Ride = sequelize.define('Ride', {
       isIn: [['pending', 'accepted', 'in_progress', 'completed', 'cancelled']]
     }
   },
-  // Driver assignment (nullable until driver accepts)
   driver_id: {
     type: DataTypes.INTEGER,
     allowNull: true,
@@ -105,23 +96,11 @@ const Ride = sequelize.define('Ride', {
     type: DataTypes.STRING,
     allowNull: true
   },
-  // Delivery-specific details (for service_type='delivery')
   delivery_details: {
-    type: DataTypes.JSON,
+    type: sequelize.getDialect() === 'postgres' ? DataTypes.JSONB : DataTypes.JSON,  // ✅ FIXED!
     allowNull: true,
     defaultValue: null
-    // Expected structure:
-    // {
-    //   senderName: string,
-    //   senderPhone: string,
-    //   receiverName: string,
-    //   receiverPhone: string,
-    //   packageDescription: string,
-    //   packageValue: string,
-    //   specialInstructions: string
-    // }
   },
-  // Timestamps for different stages
   accepted_at: {
     type: DataTypes.DATE,
     allowNull: true
@@ -138,7 +117,6 @@ const Ride = sequelize.define('Ride', {
     type: DataTypes.DATE,
     allowNull: true
   },
-  // Additional tracking flags
   ride_started: {
     type: DataTypes.BOOLEAN,
     defaultValue: false
@@ -147,7 +125,6 @@ const Ride = sequelize.define('Ride', {
     type: DataTypes.BOOLEAN,
     defaultValue: false
   },
-  // Optional: Rating after completion
   rating: {
     type: DataTypes.DECIMAL(3, 2),
     allowNull: true,
@@ -156,7 +133,6 @@ const Ride = sequelize.define('Ride', {
       max: 5
     }
   },
-  // Optional: Customer notes
   notes: {
     type: DataTypes.TEXT,
     allowNull: true
@@ -195,7 +171,6 @@ const Ride = sequelize.define('Ride', {
   ]
 });
 
-// Instance methods
 Ride.prototype.acceptByDriver = async function(driver) {
   this.status = 'accepted';
   this.driver_id = driver.id;
