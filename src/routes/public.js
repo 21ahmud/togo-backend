@@ -93,7 +93,7 @@ router.post('/rides', async (req, res) => {
     }
 
     console.log('✅ Validation passed');
-    console.log('📝 Creating ride using Sequelize ORM...');
+    console.log(`📝 Creating ride using Sequelize ORM (${sequelize.getDialect()})...`);
 
     // Use Sequelize ORM - works with both SQLite and PostgreSQL
     const newRide = await Ride.create({
