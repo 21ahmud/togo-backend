@@ -43,12 +43,24 @@ const setupAssociations = () => {
   console.log('🔗 Setting up model associations...');
 
   try {
-    // User - Order associations
+    // ✅ FIXED: User - Order associations with correct foreign keys
     if (User && Order) {
-      User.hasMany(Order, { foreignKey: 'userId', as: 'orders' });
-      User.hasMany(Order, { foreignKey: 'driverId', as: 'driverOrders' });
-      Order.belongsTo(User, { foreignKey: 'userId', as: 'customer' });
-      Order.belongsTo(User, { foreignKey: 'driverId', as: 'driver' });
+      User.hasMany(Order, { 
+        foreignKey: 'user_id',  // ✅ Changed from 'userId' to 'user_id'
+        as: 'orders' 
+      });
+      User.hasMany(Order, { 
+        foreignKey: 'assigned_to',  // ✅ Changed from 'driverId' to 'assigned_to'
+        as: 'driverOrders' 
+      });
+      Order.belongsTo(User, { 
+        foreignKey: 'user_id',  // ✅ Changed from 'userId' to 'user_id'
+        as: 'customer' 
+      });
+      Order.belongsTo(User, { 
+        foreignKey: 'assigned_to',  // ✅ Changed from 'driverId' to 'assigned_to'
+        as: 'delivery_driver'  // ✅ Changed alias to match your usage
+      });
       console.log('  ✓ User-Order associations');
     }
 
@@ -83,12 +95,12 @@ const setupAssociations = () => {
       console.log('  ✓ Restaurant-MenuItem associations');
     }
 
-    // Restaurant - Order associations
-    if (Restaurant && Order) {
-      Restaurant.hasMany(Order, { foreignKey: 'restaurantId', as: 'orders' });
-      Order.belongsTo(Restaurant, { foreignKey: 'restaurantId', as: 'restaurant' });
-      console.log('  ✓ Restaurant-Order associations');
-    }
+    // Restaurant - Order associations (commented out - orders table doesn't have restaurantId)
+    // if (Restaurant && Order) {
+    //   Restaurant.hasMany(Order, { foreignKey: 'restaurantId', as: 'orders' });
+    //   Order.belongsTo(Restaurant, { foreignKey: 'restaurantId', as: 'restaurant' });
+    //   console.log('  ✓ Restaurant-Order associations');
+    // }
 
     // User - Pharmacy associations
     if (User && Pharmacy) {
@@ -97,33 +109,25 @@ const setupAssociations = () => {
       console.log('  ✓ User-Pharmacy associations');
     }
 
-    // ✅ FIXED: Pharmacy - Prescription associations
+    // Pharmacy - Prescription associations
     if (Pharmacy && Prescription) {
       Pharmacy.hasMany(Prescription, { 
-        foreignKey: 'pharmacy_id',  // ✅ Changed to match database column
+        foreignKey: 'pharmacy_id',
         as: 'prescriptions' 
       });
       Prescription.belongsTo(Pharmacy, { 
-        foreignKey: 'pharmacy_id',  // ✅ Changed to match database column
+        foreignKey: 'pharmacy_id',
         as: 'pharmacy' 
       });
       console.log('  ✓ Pharmacy-Prescription associations');
     }
 
-    // ✅ REMOVED: User - Prescription associations (causes userId column error)
-    // The prescriptions table only has pharmacy_id, not userId
-    // if (User && Prescription) {
-    //   User.hasMany(Prescription, { foreignKey: 'userId', as: 'userPrescriptions' });
-    //   Prescription.belongsTo(User, { foreignKey: 'userId', as: 'customer' });
-    //   console.log('  ✓ User-Prescription associations');
+    // Pharmacy - Order associations (commented out - orders table doesn't have pharmacyId)
+    // if (Pharmacy && Order) {
+    //   Pharmacy.hasMany(Order, { foreignKey: 'pharmacyId', as: 'pharmacyOrders' });
+    //   Order.belongsTo(Pharmacy, { foreignKey: 'pharmacyId', as: 'pharmacy' });
+    //   console.log('  ✓ Pharmacy-Order associations');
     // }
-
-    // Pharmacy - Order associations
-    if (Pharmacy && Order) {
-      Pharmacy.hasMany(Order, { foreignKey: 'pharmacyId', as: 'pharmacyOrders' });
-      Order.belongsTo(Pharmacy, { foreignKey: 'pharmacyId', as: 'pharmacy' });
-      console.log('  ✓ Pharmacy-Order associations');
-    }
 
     console.log('✅ Model associations set up successfully');
   } catch (error) {
