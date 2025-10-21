@@ -1,4 +1,4 @@
-// src/routes/public.js - FIXED COORDINATES HANDLING
+// src/routes/public.js - POSTGRESQL VERSION
 const express = require('express');
 const router = express.Router();
 const { QueryTypes } = require('sequelize');
@@ -50,7 +50,7 @@ router.get('/drivers', async (req, res) => {
   }
 });
 
-// Create ride using RAW SQL (SQLite Compatible)
+// Create ride for POSTGRESQL
 router.post('/rides', async (req, res) => {
   console.log('\n========================================');
   console.log('🚗 NEW RIDE REQUEST RECEIVED');
@@ -86,100 +86,40 @@ router.post('/rides', async (req, res) => {
     }
 
     console.log('✅ Validation passed');
-    console.log('📝 Processing coordinates...');
+    console.log('📝 Processing coordinates for PostgreSQL...');
+    console.log('Pickup coords type:', typeof pickup_coordinates, pickup_coordinates);
+    console.log('Dropoff coords type:', typeof dropoff_coordinates, dropoff_coordinates);
 
-    // ✅ FIXED: Properly handle coordinates - convert to JSON string for SQLite
-    let pickupCoordStr = null;
-    let dropoffCoordStr = null;
+    // ✅ For PostgreSQL JSON type - pass objects directly
+    // PostgreSQL will handle the JSON conversion automatically
+    const pickupCoordJson = pickup_coordinates || null;
+    const dropoffCoordJson = dropoff_coordinates || null;
 
-    if (pickup_coordinates) {
-      // If it's already an object, stringify it
-      pickupCoordStr = typeof pickup_coordinates === 'string' 
-        ? pickup_coordinates 
-        : JSON.stringify(pickup_coordinates);
-      console.log('📍 Pickup coordinates:', pickupCoordStr);
-    }
+    console.log('📝 Creating ride with Sequelize ORM...');
 
-    if (dropoff_coordinates) {
-      // If it's already an object, stringify it
-      dropoffCoordStr = typeof dropoff_coordinates === 'string' 
-        ? dropoff_coordinates 
-        : JSON.stringify(dropoff_coordinates);
-      console.log('📍 Dropoff coordinates:', dropoffCoordStr);
-    }
-
-    console.log('📝 Preparing SQL insert...');
-
-    // Get current timestamp in ISO format for SQLite
-    const currentTimestamp = new Date().toISOString();
-
-    const query = `
-      INSERT INTO rides (
-        service_type, customer_name, customer_phone,
-        pickup_address, pickup_coordinates,
-        dropoff_address, dropoff_coordinates,
-        ride_type, vehicle_type, payment_method,
-        estimated_distance, estimated_duration, fare,
-        status, driver_id, driver_name, driver_phone,
-        delivery_details, ride_started, ride_completed,
-        created_at, updated_at
-      ) VALUES (
-        ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-        ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-        ?, ?
-      )
-    `;
-
-    const values = [
-      service_type || 'ride',                     // 1
-      customer_name.trim(),                        // 2
-      customer_phone.trim(),                       // 3
-      pickup_address.trim(),                       // 4
-      pickupCoordStr,                              // 5 - ✅ FIXED: JSON string
-      dropoff_address.trim(),                      // 6
-      dropoffCoordStr,                             // 7 - ✅ FIXED: JSON string
-      ride_type || 'standard',                     // 8
-      vehicle_type || 'car',                       // 9
-      payment_method || 'cash',                    // 10
-      estimated_distance || '0 km',                // 11
-      estimated_duration || '0 min',               // 12
-      parseFloat(fare) || 0,                       // 13
-      'pending',                                   // 14 - status
-      null,                                        // 15 - driver_id
-      null,                                        // 16 - driver_name
-      null,                                        // 17 - driver_phone
-      delivery_details ? JSON.stringify(delivery_details) : null, // 18
-      0,                                           // 19 - ride_started (SQLite boolean as 0/1)
-      0,                                           // 20 - ride_completed
-      currentTimestamp,                            // 21 - created_at
-      currentTimestamp                             // 22 - updated_at
-    ];
-
-    console.log('🔧 SQL Query prepared for SQLite');
-    console.log('📊 Values count:', values.length);
-
-    // Execute the raw SQL query
-    await sequelize.query(query, {
-      replacements: values,
-      type: QueryTypes.INSERT
+    // Use Sequelize ORM instead of raw SQL for PostgreSQL
+    const newRide = await Ride.create({
+      service_type: service_type || 'ride',
+      customer_name: customer_name.trim(),
+      customer_phone: customer_phone.trim(),
+      pickup_address: pickup_address.trim(),
+      pickup_coordinates: pickupCoordJson,
+      dropoff_address: dropoff_address.trim(),
+      dropoff_coordinates: dropoffCoordJson,
+      ride_type: ride_type || 'standard',
+      vehicle_type: vehicle_type || 'car',
+      payment_method: payment_method || 'cash',
+      estimated_distance: estimated_distance || '0 km',
+      estimated_duration: estimated_duration || '0 min',
+      fare: parseFloat(fare) || 0,
+      status: 'pending',
+      driver_id: null,
+      driver_name: null,
+      driver_phone: null,
+      delivery_details: delivery_details || null,
+      ride_started: false,
+      ride_completed: false
     });
-
-    // Get the last inserted ID (SQLite specific)
-    const [result] = await sequelize.query(
-      'SELECT last_insert_rowid() as id',
-      { type: QueryTypes.SELECT }
-    );
-    
-    const newRideId = result.id;
-
-    // Fetch the created ride
-    const [newRide] = await sequelize.query(
-      `SELECT * FROM rides WHERE id = ?`,
-      {
-        replacements: [newRideId],
-        type: QueryTypes.SELECT
-      }
-    );
     
     console.log('========================================');
     console.log('✅ RIDE CREATED SUCCESSFULLY');
@@ -245,17 +185,14 @@ router.get('/rides', async (req, res) => {
   try {
     console.log('📋 Fetching all rides...');
     
-    const query = `
-      SELECT id, service_type, customer_name, customer_phone,
-             pickup_address, dropoff_address, fare, status,
-             created_at, updated_at
-      FROM rides
-      ORDER BY created_at DESC
-      LIMIT 50
-    `;
-    
-    const rides = await sequelize.query(query, {
-      type: QueryTypes.SELECT
+    const rides = await Ride.findAll({
+      order: [['created_at', 'DESC']],
+      limit: 50,
+      attributes: [
+        'id', 'service_type', 'customer_name', 'customer_phone',
+        'pickup_address', 'dropoff_address', 'fare', 'status',
+        'created_at', 'updated_at'
+      ]
     });
 
     console.log(`✅ Retrieved ${rides.length} rides`);
@@ -280,13 +217,7 @@ router.get('/rides/:id', async (req, res) => {
   try {
     const rideId = parseInt(req.params.id);
     
-    const [ride] = await sequelize.query(
-      `SELECT * FROM rides WHERE id = ?`,
-      {
-        replacements: [rideId],
-        type: QueryTypes.SELECT
-      }
-    );
+    const ride = await Ride.findByPk(rideId);
 
     if (!ride) {
       return res.status(404).json({
