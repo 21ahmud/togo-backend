@@ -128,7 +128,7 @@ const initializeDatabase = async () => {
     // Sync all models with database
     // Use alter: false in production to prevent destructive changes
     const syncOptions = {
-      alter: true,  // Temporarily enabled to update Railway schema
+      alter: false,  // Temporarily enabled to update Railway schema
       force: false
     };
     
