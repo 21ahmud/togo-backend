@@ -54,12 +54,13 @@ const setupAssociations = () => {
 
     // User - Ride associations
     if (User && Ride) {
-       User.hasMany(Ride, { foreignKey: 'driver_id', as: 'rides' });
-  User.hasMany(Ride, { foreignKey: 'driver_id', as: 'driverRides' });
-  Ride.belongsTo(User, { foreignKey: 'driver_id', as: 'customer' });
-  Ride.belongsTo(User, { foreignKey: 'driver_id', as: 'driver' });
-  console.log('  ✓ User-Ride associations');
-}
+      User.hasMany(Ride, { foreignKey: 'userId', as: 'rides' });
+      User.hasMany(Ride, { foreignKey: 'driverId', as: 'driverRides' });
+      Ride.belongsTo(User, { foreignKey: 'userId', as: 'customer' });
+      Ride.belongsTo(User, { foreignKey: 'driverId', as: 'driver' });
+      console.log('  ✓ User-Ride associations');
+    }
+
     // User - Restaurant associations
     if (User && Restaurant) {
       User.hasOne(Restaurant, { foreignKey: 'userId', as: 'restaurant' });
