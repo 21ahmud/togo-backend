@@ -1,21 +1,20 @@
-// src/routes/public.js - UNIVERSAL VERSION (SQLite + PostgreSQL)
+// src/routes/public.js - PostgreSQL Compatible (Final)
 const express = require('express');
 const router = express.Router();
 const sequelize = require('../config/database');
 
-// Import models
-const User = require('../models/User');
-const Ride = require('../models/Ride');
-
-// Detect database dialect
-const isPostgres = sequelize.getDialect() === 'postgres';
-const isSQLite = sequelize.getDialect() === 'sqlite';
-
-console.log(`🗄️  Database dialect: ${sequelize.getDialect()}`);
+// Import models safely
+let User, Ride;
+try {
+  User = require('../models/User');
+  Ride = require('../models/Ride');
+  console.log(`🗄️  Public routes loaded - DB: ${sequelize.getDialect()}`);
+} catch (error) {
+  console.error('Error loading models in public routes:', error.message);
+}
 
 // Test route
 router.get('/test', (req, res) => {
-  console.log('✅ Public test route accessed');
   res.json({
     success: true,
     message: 'Public routes working',
@@ -24,11 +23,16 @@ router.get('/test', (req, res) => {
   });
 });
 
-// Get available drivers (public - no auth)
+// Get available drivers
 router.get('/drivers', async (req, res) => {
   try {
-    console.log('📍 Public request for available drivers');
-    
+    if (!User) {
+      return res.status(503).json({
+        success: false,
+        message: 'Service temporarily unavailable'
+      });
+    }
+
     const drivers = await User.findAll({
       where: {
         role: 'driver',
@@ -39,11 +43,9 @@ router.get('/drivers', async (req, res) => {
       attributes: ['id', 'name', 'phone', 'vehicle', 'rating', 'location']
     });
 
-    console.log(`✅ Found ${drivers.length} available drivers`);
-
     res.json({
       success: true,
-      drivers: drivers,
+      drivers: drivers || [],
       count: drivers.length
     });
 
@@ -56,16 +58,24 @@ router.get('/drivers', async (req, res) => {
   }
 });
 
-// Create ride using Sequelize ORM (works with both databases)
+// Create ride - SEQUELIZE ORM ONLY
 router.post('/rides', async (req, res) => {
-  console.log('\n========================================');
-  console.log('🚗 NEW RIDE REQUEST RECEIVED');
-  console.log('========================================');
-  console.log('📅 Timestamp:', new Date().toISOString());
+  console.log('\n' + '='.repeat(50));
+  console.log('🚗 NEW RIDE REQUEST');
+  console.log('='.repeat(50));
+  console.log('📅 Time:', new Date().toISOString());
   console.log('🗄️  Database:', sequelize.getDialect());
-  console.log('📦 Request Body:', JSON.stringify(req.body, null, 2));
+  console.log('📦 Body:', JSON.stringify(req.body, null, 2));
   
   try {
+    if (!Ride) {
+      console.error('❌ Ride model not available');
+      return res.status(503).json({
+        success: false,
+        message: 'Service temporarily unavailable'
+      });
+    }
+
     const {
       service_type,
       customer_name,
@@ -83,9 +93,9 @@ router.post('/rides', async (req, res) => {
       delivery_details
     } = req.body;
 
-    // Validate required fields
+    // Validate
     if (!customer_name || !customer_phone || !pickup_address || !dropoff_address) {
-      console.error('❌ Validation failed - missing required fields');
+      console.error('❌ Validation failed');
       return res.status(400).json({
         success: false,
         message: 'البيانات المطلوبة ناقصة'
@@ -93,9 +103,9 @@ router.post('/rides', async (req, res) => {
     }
 
     console.log('✅ Validation passed');
-    console.log(`📝 Creating ride using Sequelize ORM (${sequelize.getDialect()})...`);
+    console.log('📝 Creating with Sequelize ORM...');
 
-    // Use Sequelize ORM - works with both SQLite and PostgreSQL
+    // USE SEQUELIZE CREATE - NOT RAW SQL!
     const newRide = await Ride.create({
       service_type: service_type || 'ride',
       customer_name: customer_name.trim(),
@@ -107,8 +117,8 @@ router.post('/rides', async (req, res) => {
       ride_type: ride_type || 'standard',
       vehicle_type: vehicle_type || 'car',
       payment_method: payment_method || 'cash',
-      estimated_distance: estimated_distance || '0 km',
-      estimated_duration: estimated_duration || '0 min',
+      estimated_distance: estimated_distance || null,
+      estimated_duration: estimated_duration || null,
       fare: parseFloat(fare) || 0,
       status: 'pending',
       driver_id: null,
@@ -119,18 +129,14 @@ router.post('/rides', async (req, res) => {
       ride_completed: false
     });
 
-    console.log('========================================');
+    console.log('='.repeat(50));
     console.log('✅ RIDE CREATED SUCCESSFULLY');
-    console.log('========================================');
-    console.log('🆔 Ride ID:', newRide.id);
+    console.log('='.repeat(50));
+    console.log('🆔 ID:', newRide.id);
     console.log('👤 Customer:', newRide.customer_name);
-    console.log('📞 Phone:', newRide.customer_phone);
-    console.log('🚀 Service Type:', newRide.service_type);
-    console.log('🚗 Ride Type:', newRide.ride_type);
-    console.log('🚙 Vehicle Type:', newRide.vehicle_type);
-    console.log('💰 Fare:', newRide.fare);
-    console.log('📍 Status:', newRide.status);
-    console.log('========================================\n');
+    console.log('🚗 Type:', newRide.ride_type);
+    console.log('💰 Fare:', newRide.fare, 'EGP');
+    console.log('='.repeat(50) + '\n');
 
     res.json({
       success: true,
@@ -146,68 +152,58 @@ router.post('/rides', async (req, res) => {
         vehicle_type: newRide.vehicle_type,
         fare: newRide.fare,
         status: newRide.status,
-        created_at: newRide.created_at
+        created_at: newRide.created_at || newRide.createdAt
       }
     });
 
   } catch (error) {
-    console.log('========================================');
+    console.log('='.repeat(50));
     console.error('❌ RIDE CREATION FAILED');
-    console.log('========================================');
-    console.error('Error Type:', error.name);
-    console.error('Error Message:', error.message);
+    console.log('='.repeat(50));
+    console.error('Type:', error.name);
+    console.error('Message:', error.message);
     
     if (error.original) {
-      console.error('Original Error:', error.original.message || error.original);
-      console.error('SQL State:', error.original.code);
+      console.error('Original:', error.original.message);
     }
     
-    if (error.sql) {
-      console.error('Failed SQL:', error.sql);
+    if (error.errors) {
+      console.error('Validation errors:');
+      error.errors.forEach(e => console.error(`  - ${e.path}: ${e.message}`));
     }
     
-    if (error.errors && error.errors.length > 0) {
-      console.error('Validation Errors:');
-      error.errors.forEach(err => {
-        console.error(`  - ${err.path}: ${err.message}`);
-      });
-    }
-    
-    console.error('Stack Trace:', error.stack);
-    console.log('========================================\n');
+    console.error('Stack:', error.stack);
+    console.log('='.repeat(50) + '\n');
 
     res.status(500).json({
       success: false,
       message: 'فشل في إرسال الطلب. يرجى المحاولة مرة أخرى.',
       ...(process.env.NODE_ENV !== 'production' && {
         error: error.message,
-        errorType: error.name,
-        details: error.errors?.map(e => ({ field: e.path, message: e.message }))
+        type: error.name
       })
     });
   }
 });
 
-// Get all rides (public - for testing)
+// Get all rides
 router.get('/rides', async (req, res) => {
   try {
-    console.log('📋 Fetching all rides...');
-    
+    if (!Ride) {
+      return res.status(503).json({
+        success: false,
+        message: 'Service unavailable'
+      });
+    }
+
     const rides = await Ride.findAll({
-      attributes: [
-        'id', 'service_type', 'customer_name', 'customer_phone',
-        'pickup_address', 'dropoff_address', 'ride_type', 'vehicle_type',
-        'fare', 'status', 'created_at', 'updated_at'
-      ],
       order: [['created_at', 'DESC']],
       limit: 50
     });
 
-    console.log(`✅ Retrieved ${rides.length} rides`);
-
     res.json({
       success: true,
-      rides: rides,
+      rides: rides || [],
       count: rides.length
     });
 
@@ -215,18 +211,22 @@ router.get('/rides', async (req, res) => {
     console.error('❌ Get rides error:', error.message);
     res.status(500).json({
       success: false,
-      message: 'فشل في جلب الطلبات',
-      error: error.message
+      message: 'فشل في جلب الطلبات'
     });
   }
 });
 
-// Get ride by ID (public - for tracking)
+// Get ride by ID
 router.get('/rides/:id', async (req, res) => {
   try {
-    const rideId = parseInt(req.params.id);
-    
-    const ride = await Ride.findByPk(rideId);
+    if (!Ride) {
+      return res.status(503).json({
+        success: false,
+        message: 'Service unavailable'
+      });
+    }
+
+    const ride = await Ride.findByPk(parseInt(req.params.id));
 
     if (!ride) {
       return res.status(404).json({
@@ -244,8 +244,7 @@ router.get('/rides/:id', async (req, res) => {
     console.error('❌ Get ride error:', error.message);
     res.status(500).json({
       success: false,
-      message: 'فشل في جلب تفاصيل الطلب',
-      error: error.message
+      message: 'فشل في جلب تفاصيل الطلب'
     });
   }
 });
