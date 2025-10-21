@@ -1,38 +1,28 @@
-// src/routes/public.js - PostgreSQL Compatible (Final)
+// src/routes/public.js - SQLite COMPATIBLE VERSION
 const express = require('express');
 const router = express.Router();
+const { QueryTypes } = require('sequelize');
 const sequelize = require('../config/database');
 
-// Import models safely
-let User, Ride;
-try {
-  User = require('../models/User');
-  Ride = require('../models/Ride');
-  console.log(`🗄️  Public routes loaded - DB: ${sequelize.getDialect()}`);
-} catch (error) {
-  console.error('Error loading models in public routes:', error.message);
-}
+// Import models
+const User = require('../models/User');
+const Ride = require('../models/Ride');
 
 // Test route
 router.get('/test', (req, res) => {
+  console.log('✅ Public test route accessed');
   res.json({
     success: true,
     message: 'Public routes working',
-    database: sequelize.getDialect(),
     timestamp: new Date().toISOString()
   });
 });
 
-// Get available drivers
+// Get available drivers (public - no auth)
 router.get('/drivers', async (req, res) => {
   try {
-    if (!User) {
-      return res.status(503).json({
-        success: false,
-        message: 'Service temporarily unavailable'
-      });
-    }
-
+    console.log('📍 Public request for available drivers');
+    
     const drivers = await User.findAll({
       where: {
         role: 'driver',
@@ -43,9 +33,11 @@ router.get('/drivers', async (req, res) => {
       attributes: ['id', 'name', 'phone', 'vehicle', 'rating', 'location']
     });
 
+    console.log(`✅ Found ${drivers.length} available drivers`);
+
     res.json({
       success: true,
-      drivers: drivers || [],
+      drivers: drivers,
       count: drivers.length
     });
 
@@ -58,24 +50,15 @@ router.get('/drivers', async (req, res) => {
   }
 });
 
-// Create ride - SEQUELIZE ORM ONLY
+// Create ride using RAW SQL (SQLite Compatible)
 router.post('/rides', async (req, res) => {
-  console.log('\n' + '='.repeat(50));
-  console.log('🚗 NEW RIDE REQUEST');
-  console.log('='.repeat(50));
-  console.log('📅 Time:', new Date().toISOString());
-  console.log('🗄️  Database:', sequelize.getDialect());
-  console.log('📦 Body:', JSON.stringify(req.body, null, 2));
+  console.log('\n========================================');
+  console.log('🚗 NEW RIDE REQUEST RECEIVED');
+  console.log('========================================');
+  console.log('📅 Timestamp:', new Date().toISOString());
+  console.log('📦 Request Body:', JSON.stringify(req.body, null, 2));
   
   try {
-    if (!Ride) {
-      console.error('❌ Ride model not available');
-      return res.status(503).json({
-        success: false,
-        message: 'Service temporarily unavailable'
-      });
-    }
-
     const {
       service_type,
       customer_name,
@@ -93,9 +76,9 @@ router.post('/rides', async (req, res) => {
       delivery_details
     } = req.body;
 
-    // Validate
+    // Validate required fields
     if (!customer_name || !customer_phone || !pickup_address || !dropoff_address) {
-      console.error('❌ Validation failed');
+      console.error('❌ Validation failed - missing required fields');
       return res.status(400).json({
         success: false,
         message: 'البيانات المطلوبة ناقصة'
@@ -103,40 +86,91 @@ router.post('/rides', async (req, res) => {
     }
 
     console.log('✅ Validation passed');
-    console.log('📝 Creating with Sequelize ORM...');
+    console.log('📝 Preparing SQL insert...');
 
-    // USE SEQUELIZE CREATE - NOT RAW SQL!
-    const newRide = await Ride.create({
-      service_type: service_type || 'ride',
-      customer_name: customer_name.trim(),
-      customer_phone: customer_phone.trim(),
-      pickup_address: pickup_address.trim(),
-      pickup_coordinates: pickup_coordinates || null,
-      dropoff_address: dropoff_address.trim(),
-      dropoff_coordinates: dropoff_coordinates || null,
-      ride_type: ride_type || 'standard',
-      vehicle_type: vehicle_type || 'car',
-      payment_method: payment_method || 'cash',
-      estimated_distance: estimated_distance || null,
-      estimated_duration: estimated_duration || null,
-      fare: parseFloat(fare) || 0,
-      status: 'pending',
-      driver_id: null,
-      driver_name: null,
-      driver_phone: null,
-      delivery_details: delivery_details || null,
-      ride_started: false,
-      ride_completed: false
+    // Get current timestamp in ISO format for SQLite
+    const currentTimestamp = new Date().toISOString();
+
+    // SQLite uses ? placeholders, not $1, $2
+    // SQLite doesn't have NOW() function - use datetime('now') or pass JavaScript Date
+    const query = `
+      INSERT INTO rides (
+        service_type, customer_name, customer_phone,
+        pickup_address, pickup_coordinates,
+        dropoff_address, dropoff_coordinates,
+        ride_type, vehicle_type, payment_method,
+        estimated_distance, estimated_duration, fare,
+        status, driver_id, driver_name, driver_phone,
+        delivery_details, ride_started, ride_completed,
+        created_at, updated_at
+      ) VALUES (
+        ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+        ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+        ?, ?
+      )
+    `;
+
+    const values = [
+      service_type || 'ride',                     // 1
+      customer_name.trim(),                        // 2
+      customer_phone.trim(),                       // 3
+      pickup_address.trim(),                       // 4
+      pickup_coordinates || null,                  // 5
+      dropoff_address.trim(),                      // 6
+      dropoff_coordinates || null,                 // 7
+      ride_type || 'standard',                     // 8
+      vehicle_type || 'car',                       // 9
+      payment_method || 'cash',                    // 10
+      estimated_distance || '0 km',                // 11
+      estimated_duration || '0 min',               // 12
+      parseFloat(fare) || 0,                       // 13
+      'pending',                                   // 14 - status
+      null,                                        // 15 - driver_id
+      null,                                        // 16 - driver_name
+      null,                                        // 17 - driver_phone
+      delivery_details ? JSON.stringify(delivery_details) : null, // 18
+      0,                                           // 19 - ride_started (SQLite boolean as 0/1)
+      0,                                           // 20 - ride_completed
+      currentTimestamp,                            // 21 - created_at
+      currentTimestamp                             // 22 - updated_at
+    ];
+
+    console.log('🔧 SQL Query prepared for SQLite');
+    console.log('📊 Values count:', values.length);
+
+    // Execute the raw SQL query
+    await sequelize.query(query, {
+      replacements: values,
+      type: QueryTypes.INSERT
     });
 
-    console.log('='.repeat(50));
+    // Get the last inserted ID (SQLite specific)
+    const [result] = await sequelize.query(
+      'SELECT last_insert_rowid() as id',
+      { type: QueryTypes.SELECT }
+    );
+    
+    const newRideId = result.id;
+
+    // Fetch the created ride
+    const [newRide] = await sequelize.query(
+      `SELECT * FROM rides WHERE id = ?`,
+      {
+        replacements: [newRideId],
+        type: QueryTypes.SELECT
+      }
+    );
+    
+    console.log('========================================');
     console.log('✅ RIDE CREATED SUCCESSFULLY');
-    console.log('='.repeat(50));
-    console.log('🆔 ID:', newRide.id);
+    console.log('========================================');
+    console.log('🆔 Ride ID:', newRide.id);
     console.log('👤 Customer:', newRide.customer_name);
-    console.log('🚗 Type:', newRide.ride_type);
-    console.log('💰 Fare:', newRide.fare, 'EGP');
-    console.log('='.repeat(50) + '\n');
+    console.log('📞 Phone:', newRide.customer_phone);
+    console.log('🚀 Service Type:', newRide.service_type);
+    console.log('💰 Fare:', newRide.fare);
+    console.log('📍 Status:', newRide.status);
+    console.log('========================================\n');
 
     res.json({
       success: true,
@@ -152,61 +186,63 @@ router.post('/rides', async (req, res) => {
         vehicle_type: newRide.vehicle_type,
         fare: newRide.fare,
         status: newRide.status,
-        created_at: newRide.created_at || newRide.createdAt
+        created_at: newRide.created_at
       }
     });
 
   } catch (error) {
-    console.log('='.repeat(50));
+    console.log('========================================');
     console.error('❌ RIDE CREATION FAILED');
-    console.log('='.repeat(50));
-    console.error('Type:', error.name);
-    console.error('Message:', error.message);
+    console.log('========================================');
+    console.error('Error Type:', error.name);
+    console.error('Error Message:', error.message);
     
     if (error.original) {
-      console.error('Original Error:', error.original);
-      console.error('Original SQL:', error.sql);
+      console.error('Original Error:', error.original.message);
+      console.error('SQL State:', error.original.code);
     }
     
-    if (error.errors) {
-      console.error('Validation errors:');
-      error.errors.forEach(e => console.error(`  - ${e.path}: ${e.message}`));
+    if (error.sql) {
+      console.error('Failed SQL:', error.sql);
     }
     
-    console.error('Full Error Object:', JSON.stringify(error, null, 2));
-    console.error('Stack:', error.stack);
-    console.log('='.repeat(50) + '\n');
+    console.error('Stack Trace:', error.stack);
+    console.log('========================================\n');
 
     res.status(500).json({
       success: false,
       message: 'فشل في إرسال الطلب. يرجى المحاولة مرة أخرى.',
-      ...(process.env.NODE_ENV !== 'production' && {
+      ...(process.env.NODE_ENV === 'development' && {
         error: error.message,
-        type: error.name,
-        details: error.original?.message
+        errorType: error.name
       })
     });
   }
 });
 
-// Get all rides
+// Get all rides (public - for testing)
 router.get('/rides', async (req, res) => {
   try {
-    if (!Ride) {
-      return res.status(503).json({
-        success: false,
-        message: 'Service unavailable'
-      });
-    }
-
-    const rides = await Ride.findAll({
-      order: [['created_at', 'DESC']],
-      limit: 50
+    console.log('📋 Fetching all rides...');
+    
+    const query = `
+      SELECT id, service_type, customer_name, customer_phone,
+             pickup_address, dropoff_address, fare, status,
+             created_at, updated_at
+      FROM rides
+      ORDER BY created_at DESC
+      LIMIT 50
+    `;
+    
+    const rides = await sequelize.query(query, {
+      type: QueryTypes.SELECT
     });
+
+    console.log(`✅ Retrieved ${rides.length} rides`);
 
     res.json({
       success: true,
-      rides: rides || [],
+      rides: rides,
       count: rides.length
     });
 
@@ -219,17 +255,18 @@ router.get('/rides', async (req, res) => {
   }
 });
 
-// Get ride by ID
+// Get ride by ID (public - for tracking)
 router.get('/rides/:id', async (req, res) => {
   try {
-    if (!Ride) {
-      return res.status(503).json({
-        success: false,
-        message: 'Service unavailable'
-      });
-    }
-
-    const ride = await Ride.findByPk(parseInt(req.params.id));
+    const rideId = parseInt(req.params.id);
+    
+    const [ride] = await sequelize.query(
+      `SELECT * FROM rides WHERE id = ?`,
+      {
+        replacements: [rideId],
+        type: QueryTypes.SELECT
+      }
+    );
 
     if (!ride) {
       return res.status(404).json({

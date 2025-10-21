@@ -118,6 +118,7 @@ const setupAssociations = () => {
 };
 
 // Initialize database and models
+// Initialize database and models - FIXED VERSION
 const initializeDatabase = async () => {
   try {
     console.log('🔄 Syncing database...');
@@ -125,16 +126,55 @@ const initializeDatabase = async () => {
     // Setup associations before syncing
     setupAssociations();
     
-    // Sync all models with database
-    // Use alter: false in production to prevent destructive changes
+    // For SQLite, we need to be more careful with alter
+    const isDevelopment = process.env.NODE_ENV !== 'production';
+    const dialect = sequelize.getDialect();
+    
+    // SQLite-specific handling
+    if (dialect === 'sqlite' && isDevelopment) {
+      console.log('🗄️  SQLite detected - using careful sync strategy');
+      
+      // Try to clean up any leftover backup tables first
+      try {
+        await sequelize.query('DROP TABLE IF EXISTS rides_backup');
+        console.log('✅ Cleaned up backup tables');
+      } catch (err) {
+        console.warn('⚠️  Could not clean backup tables:', err.message);
+      }
+      
+      // Check for duplicate IDs before syncing
+      try {
+        const [duplicates] = await sequelize.query(`
+          SELECT id, COUNT(*) as count 
+          FROM rides 
+          GROUP BY id 
+          HAVING COUNT(*) > 1
+        `);
+        
+        if (duplicates.length > 0) {
+          console.error('❌ Found duplicate IDs in rides table:', duplicates);
+          throw new Error('Database has duplicate IDs. Please fix data integrity first.');
+        }
+      } catch (err) {
+        // Table might not exist yet, which is fine
+        if (!err.message.includes('no such table')) {
+          console.warn('⚠️  Could not check for duplicates:', err.message);
+        }
+      }
+    }
+    
+    // Sync with more conservative options for SQLite
     const syncOptions = {
-      alter: false,  // Temporarily enabled to update Railway schema
-      force: false
+      alter: dialect === 'sqlite' ? false : isDevelopment, // Disable alter for SQLite
+      force: false,
+      logging: console.log
     };
     
-    console.log('⚠️  Running with alter: true to update schema');
+    console.log('🔧 Sync options:', syncOptions);
+    
     await sequelize.sync(syncOptions);
-    console.log('✅ Schema updated successfully');
+    
+    console.log('✅ Database synchronized successfully');
     
     // Log model counts
     const counts = {};
