@@ -29,6 +29,7 @@ const MenuItem = sequelize.define('MenuItem', {
   original_price: {
     type: DataTypes.DECIMAL(10, 2),
     allowNull: true,
+    field: 'original_price',
     validate: {
       min: 0
     }
@@ -37,6 +38,7 @@ const MenuItem = sequelize.define('MenuItem', {
     type: DataTypes.DECIMAL(5, 2),
     allowNull: true,
     defaultValue: 0,
+    field: 'discount_percentage',
     validate: {
       min: 0,
       max: 100
@@ -44,7 +46,8 @@ const MenuItem = sequelize.define('MenuItem', {
   },
   has_discount: {
     type: DataTypes.BOOLEAN,
-    defaultValue: false
+    defaultValue: false,
+    field: 'has_discount'
   },
   category: {
     type: DataTypes.ENUM('Main', 'Starter', 'Dessert', 'Drinks'),
@@ -53,16 +56,19 @@ const MenuItem = sequelize.define('MenuItem', {
   },
   image_url: {
     type: DataTypes.TEXT,
-    allowNull: true
+    allowNull: true,
+    field: 'image_url'
   },
   prep_time: {
     type: DataTypes.INTEGER,
     allowNull: true,
+    field: 'prep_time',
     comment: 'Preparation time in minutes'
   },
   is_popular: {
     type: DataTypes.BOOLEAN,
-    defaultValue: false
+    defaultValue: false,
+    field: 'is_popular'
   },
   available: {
     type: DataTypes.BOOLEAN,
@@ -71,6 +77,7 @@ const MenuItem = sequelize.define('MenuItem', {
   restaurant_email: {
     type: DataTypes.STRING,
     allowNull: false,
+    field: 'restaurant_email',
     validate: {
       isEmail: true
     }
@@ -78,16 +85,30 @@ const MenuItem = sequelize.define('MenuItem', {
   restaurant_id: {
     type: DataTypes.INTEGER,
     allowNull: true,
+    field: 'restaurant_id',
     references: {
       model: 'users',
       key: 'id'
     }
+  },
+  // Explicitly define timestamp fields to match database
+  createdAt: {
+    type: DataTypes.DATE,
+    field: 'createdAt',  // Database column name (camelCase)
+    allowNull: false,
+    defaultValue: DataTypes.NOW
+  },
+  updatedAt: {
+    type: DataTypes.DATE,
+    field: 'updatedAt',  // Database column name (camelCase)
+    allowNull: false,
+    defaultValue: DataTypes.NOW
   }
 }, {
   tableName: 'menu_items',
-  underscored: true,  // 🔥 THIS IS THE KEY FIX - Forces snake_case for all columns
   timestamps: true,
-  createdAt: 'createdAt',  // Explicitly map timestamp columns
+  // Tell Sequelize the exact column names for timestamps
+  createdAt: 'createdAt',
   updatedAt: 'updatedAt',
   indexes: [
     {
