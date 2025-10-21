@@ -2,7 +2,7 @@
 const express = require('express');
 const { Op } = require('sequelize');
 const User = require('../models/User');
-const Ride = require('../models/Ride'); // Add this import
+const Ride = require('../models/Ride');
 const { auth, requireRole } = require('../middleware/auth');
 
 const router = express.Router();
@@ -30,6 +30,8 @@ router.get('/test', async (req, res) => {
 // PUBLIC: Create a new ride request (no auth required)
 router.post('/', async (req, res) => {
   try {
+    console.log('Received ride booking request:', JSON.stringify(req.body, null, 2));
+
     const {
       service_type,
       customer_name,
@@ -49,11 +51,16 @@ router.post('/', async (req, res) => {
 
     // Validate required fields
     if (!customer_name || !customer_phone || !pickup_address || !dropoff_address) {
+      console.log('Validation failed: Missing required fields');
       return res.status(400).json({
         success: false,
         message: 'البيانات المطلوبة ناقصة'
       });
     }
+
+    // Log coordinates for debugging
+    console.log('Pickup coordinates:', pickup_coordinates);
+    console.log('Dropoff coordinates:', dropoff_coordinates);
 
     // Create new ride in database
     const newRide = await Ride.create({
@@ -61,9 +68,9 @@ router.post('/', async (req, res) => {
       customer_name,
       customer_phone,
       pickup_address,
-      pickup_coordinates,
+      pickup_coordinates: pickup_coordinates || null,
       dropoff_address,
-      dropoff_coordinates,
+      dropoff_coordinates: dropoff_coordinates || null,
       ride_type,
       vehicle_type,
       payment_method: payment_method || 'cash',
@@ -74,31 +81,35 @@ router.post('/', async (req, res) => {
       driver_id: null,
       driver_name: null,
       driver_phone: null,
-      delivery_details
+      delivery_details: delivery_details || null
     });
 
-    console.log('New ride created:', {
+    console.log('New ride created successfully:', {
       id: newRide.id,
       service_type: newRide.service_type,
       customer: newRide.customer_name,
       ride_type: newRide.ride_type
     });
 
-    res.json({
+    res.status(201).json({
       success: true,
       message: 'تم إنشاء الطلب بنجاح',
       ride: newRide
     });
 
   } catch (error) {
-    console.error('Create ride error:', error);
+    console.error('Create ride error details:', error);
+    console.error('Error stack:', error.stack);
+    
     res.status(500).json({
       success: false,
-      message: 'فشل في إنشاء الطلب'
+      message: 'فشل في إنشاء الطلب',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
     });
   }
 });
 
+// Rest of the routes remain the same...
 // Get all rides - Requires authentication
 router.get('/', auth, async (req, res) => {
   try {
@@ -106,9 +117,7 @@ router.get('/', auth, async (req, res) => {
 
     let whereClause = {};
     
-    // Filter rides based on user role
     if (req.user.role === 'driver') {
-      // Drivers see: their assigned rides + pending rides that match their vehicle
       const driver = await User.findByPk(req.user.id);
       
       if (!driver) {
@@ -118,7 +127,6 @@ router.get('/', auth, async (req, res) => {
         });
       }
 
-      // Get rides assigned to this driver OR pending rides
       whereClause = {
         [Op.or]: [
           { driver_id: req.user.id },
@@ -129,9 +137,8 @@ router.get('/', auth, async (req, res) => {
         ]
       };
     } else if (req.user.role === 'admin') {
-      // Admins see all rides - no filter needed
+      // Admins see all rides
     } else {
-      // Regular customers see their own rides
       whereClause = {
         customer_phone: req.user.phone
       };
@@ -152,17 +159,14 @@ router.get('/', auth, async (req, res) => {
 
     let filteredRides = allRides;
 
-    // Additional filtering for drivers to match vehicle types
     if (req.user.role === 'driver') {
       const driver = await User.findByPk(req.user.id);
       
       filteredRides = allRides.filter(ride => {
-        // Include rides assigned to this driver
         if (ride.driver_id === req.user.id) {
           return true;
         }
         
-        // Include pending rides that match driver's vehicle
         if (ride.status === 'pending' && !ride.driver_id) {
           return isRideMatchingDriverVehicle(ride, driver.vehicle);
         }
@@ -205,11 +209,8 @@ router.put('/:id', auth, async (req, res) => {
       });
     }
 
-    // Permission checks
     if (req.user.role === 'driver') {
-      // Drivers can accept pending rides or update their assigned rides
       if (ride.status === 'pending' && !ride.driver_id && updates.status === 'accepted') {
-        // Driver accepting a ride
         const driver = await User.findByPk(req.user.id);
         if (!driver || !isRideMatchingDriverVehicle(ride, driver.vehicle)) {
           return res.status(403).json({
@@ -218,23 +219,20 @@ router.put('/:id', auth, async (req, res) => {
           });
         }
       } else if (ride.driver_id && ride.driver_id !== req.user.id) {
-        // Driver trying to update someone else's ride
         return res.status(403).json({
           success: false,
           message: 'لا يمكنك تعديل طلب سائق آخر'
         });
       }
     } else if (req.user.role !== 'admin') {
-      // Regular users can't update rides
       return res.status(403).json({
         success: false,
         message: 'غير مُخوَّل لتعديل الطلبات'
       });
     }
 
-    // Update the ride in database
     await ride.update(updates);
-    await ride.reload(); // Refresh the instance
+    await ride.reload();
 
     console.log('Ride updated successfully:', {
       id: ride.id,
@@ -279,7 +277,6 @@ router.get('/:id', auth, async (req, res) => {
       });
     }
 
-    // Permission checks
     let canAccess = false;
     
     if (req.user.role === 'admin') {
@@ -407,6 +404,7 @@ router.get('/stats/overview', auth, requireRole(['admin']), async (req, res) => 
       return sum + (parseFloat(ride.fare) || 0);
     }, 0);
 
+    const { sequelize } = require('../config/database');
     const rideTypeCounts = await Ride.findAll({
       attributes: [
         'service_type',

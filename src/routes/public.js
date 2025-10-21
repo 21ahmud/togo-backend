@@ -1,4 +1,4 @@
-// src/routes/public.js - SQLite COMPATIBLE VERSION
+// src/routes/public.js - FIXED COORDINATES HANDLING
 const express = require('express');
 const router = express.Router();
 const { QueryTypes } = require('sequelize');
@@ -86,13 +86,33 @@ router.post('/rides', async (req, res) => {
     }
 
     console.log('✅ Validation passed');
+    console.log('📝 Processing coordinates...');
+
+    // ✅ FIXED: Properly handle coordinates - convert to JSON string for SQLite
+    let pickupCoordStr = null;
+    let dropoffCoordStr = null;
+
+    if (pickup_coordinates) {
+      // If it's already an object, stringify it
+      pickupCoordStr = typeof pickup_coordinates === 'string' 
+        ? pickup_coordinates 
+        : JSON.stringify(pickup_coordinates);
+      console.log('📍 Pickup coordinates:', pickupCoordStr);
+    }
+
+    if (dropoff_coordinates) {
+      // If it's already an object, stringify it
+      dropoffCoordStr = typeof dropoff_coordinates === 'string' 
+        ? dropoff_coordinates 
+        : JSON.stringify(dropoff_coordinates);
+      console.log('📍 Dropoff coordinates:', dropoffCoordStr);
+    }
+
     console.log('📝 Preparing SQL insert...');
 
     // Get current timestamp in ISO format for SQLite
     const currentTimestamp = new Date().toISOString();
 
-    // SQLite uses ? placeholders, not $1, $2
-    // SQLite doesn't have NOW() function - use datetime('now') or pass JavaScript Date
     const query = `
       INSERT INTO rides (
         service_type, customer_name, customer_phone,
@@ -115,9 +135,9 @@ router.post('/rides', async (req, res) => {
       customer_name.trim(),                        // 2
       customer_phone.trim(),                       // 3
       pickup_address.trim(),                       // 4
-      pickup_coordinates || null,                  // 5
+      pickupCoordStr,                              // 5 - ✅ FIXED: JSON string
       dropoff_address.trim(),                      // 6
-      dropoff_coordinates || null,                 // 7
+      dropoffCoordStr,                             // 7 - ✅ FIXED: JSON string
       ride_type || 'standard',                     // 8
       vehicle_type || 'car',                       // 9
       payment_method || 'cash',                    // 10
@@ -172,7 +192,7 @@ router.post('/rides', async (req, res) => {
     console.log('📍 Status:', newRide.status);
     console.log('========================================\n');
 
-    res.json({
+    res.status(201).json({
       success: true,
       message: 'تم إنشاء الطلب بنجاح',
       ride: {
