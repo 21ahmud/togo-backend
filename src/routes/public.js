@@ -1,4 +1,4 @@
-// src/routes/public.js - FINAL WORKING VERSION
+// src/routes/public.js - SQLite COMPATIBLE VERSION
 const express = require('express');
 const router = express.Router();
 const { QueryTypes } = require('sequelize');
@@ -50,7 +50,7 @@ router.get('/drivers', async (req, res) => {
   }
 });
 
-// Create ride using RAW SQL (bypasses Sequelize associations)
+// Create ride using RAW SQL (SQLite Compatible)
 router.post('/rides', async (req, res) => {
   console.log('\n========================================');
   console.log('🚗 NEW RIDE REQUEST RECEIVED');
@@ -88,7 +88,11 @@ router.post('/rides', async (req, res) => {
     console.log('✅ Validation passed');
     console.log('📝 Preparing SQL insert...');
 
-    // Use RAW SQL to completely bypass Sequelize ORM
+    // Get current timestamp in ISO format for SQLite
+    const currentTimestamp = new Date().toISOString();
+
+    // SQLite uses ? placeholders, not $1, $2
+    // SQLite doesn't have NOW() function - use datetime('now') or pass JavaScript Date
     const query = `
       INSERT INTO rides (
         service_type, customer_name, customer_phone,
@@ -100,47 +104,62 @@ router.post('/rides', async (req, res) => {
         delivery_details, ride_started, ride_completed,
         created_at, updated_at
       ) VALUES (
-        $1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
-        $11, $12, $13, $14, $15, $16, $17, $18, $19, $20,
-        NOW(), NOW()
+        ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+        ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+        ?, ?
       )
-      RETURNING id, service_type, customer_name, customer_phone,
-                pickup_address, dropoff_address, fare, status, created_at;
     `;
 
     const values = [
-      service_type || 'ride',                    // $1
-      customer_name.trim(),                       // $2
-      customer_phone.trim(),                      // $3
-      pickup_address.trim(),                      // $4
-      pickup_coordinates || null,                 // $5
-      dropoff_address.trim(),                     // $6
-      dropoff_coordinates || null,                // $7
-      ride_type || 'standard',                    // $8
-      vehicle_type || 'car',                      // $9
-      payment_method || 'cash',                   // $10
-      estimated_distance || '0 km',               // $11
-      estimated_duration || '0 min',              // $12
-      parseFloat(fare) || 0,                      // $13
-      'pending',                                  // $14 - status
-      null,                                       // $15 - driver_id
-      null,                                       // $16 - driver_name
-      null,                                       // $17 - driver_phone
-      delivery_details ? JSON.stringify(delivery_details) : null, // $18
-      false,                                      // $19 - ride_started
-      false                                       // $20 - ride_completed
+      service_type || 'ride',                     // 1
+      customer_name.trim(),                        // 2
+      customer_phone.trim(),                       // 3
+      pickup_address.trim(),                       // 4
+      pickup_coordinates || null,                  // 5
+      dropoff_address.trim(),                      // 6
+      dropoff_coordinates || null,                 // 7
+      ride_type || 'standard',                     // 8
+      vehicle_type || 'car',                       // 9
+      payment_method || 'cash',                    // 10
+      estimated_distance || '0 km',                // 11
+      estimated_duration || '0 min',               // 12
+      parseFloat(fare) || 0,                       // 13
+      'pending',                                   // 14 - status
+      null,                                        // 15 - driver_id
+      null,                                        // 16 - driver_name
+      null,                                        // 17 - driver_phone
+      delivery_details ? JSON.stringify(delivery_details) : null, // 18
+      0,                                           // 19 - ride_started (SQLite boolean as 0/1)
+      0,                                           // 20 - ride_completed
+      currentTimestamp,                            // 21 - created_at
+      currentTimestamp                             // 22 - updated_at
     ];
 
-    console.log('🔧 SQL Query prepared');
-    console.log('📊 Values:', values.map((v, i) => `$${i+1}: ${v}`).join(', '));
+    console.log('🔧 SQL Query prepared for SQLite');
+    console.log('📊 Values count:', values.length);
 
     // Execute the raw SQL query
-    const results = await sequelize.query(query, {
-      bind: values,
-      type: QueryTypes.SELECT
+    await sequelize.query(query, {
+      replacements: values,
+      type: QueryTypes.INSERT
     });
 
-    const newRide = results[0];
+    // Get the last inserted ID (SQLite specific)
+    const [result] = await sequelize.query(
+      'SELECT last_insert_rowid() as id',
+      { type: QueryTypes.SELECT }
+    );
+    
+    const newRideId = result.id;
+
+    // Fetch the created ride
+    const [newRide] = await sequelize.query(
+      `SELECT * FROM rides WHERE id = ?`,
+      {
+        replacements: [newRideId],
+        type: QueryTypes.SELECT
+      }
+    );
     
     console.log('========================================');
     console.log('✅ RIDE CREATED SUCCESSFULLY');
@@ -163,6 +182,8 @@ router.post('/rides', async (req, res) => {
         customer_phone: newRide.customer_phone,
         pickup_address: newRide.pickup_address,
         dropoff_address: newRide.dropoff_address,
+        ride_type: newRide.ride_type,
+        vehicle_type: newRide.vehicle_type,
         fare: newRide.fare,
         status: newRide.status,
         created_at: newRide.created_at
@@ -230,6 +251,40 @@ router.get('/rides', async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'فشل في جلب الطلبات'
+    });
+  }
+});
+
+// Get ride by ID (public - for tracking)
+router.get('/rides/:id', async (req, res) => {
+  try {
+    const rideId = parseInt(req.params.id);
+    
+    const [ride] = await sequelize.query(
+      `SELECT * FROM rides WHERE id = ?`,
+      {
+        replacements: [rideId],
+        type: QueryTypes.SELECT
+      }
+    );
+
+    if (!ride) {
+      return res.status(404).json({
+        success: false,
+        message: 'الطلب غير موجود'
+      });
+    }
+
+    res.json({
+      success: true,
+      ride
+    });
+
+  } catch (error) {
+    console.error('❌ Get ride error:', error.message);
+    res.status(500).json({
+      success: false,
+      message: 'فشل في جلب تفاصيل الطلب'
     });
   }
 });
