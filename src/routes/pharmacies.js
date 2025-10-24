@@ -3,11 +3,34 @@ const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const { Op } = require('sequelize');
 const User = require('../models/User');
-// const Pharmacy = require('../models/Pharmacy'); // Optional - comment out if not needed
 const { authenticateToken } = require('../middleware/auth');
 const adminAuth = require('../middleware/adminAuth');
 
 const router = express.Router();
+
+// Helper function to parse location data
+const parseLocation = (locationData) => {
+  if (!locationData) return null;
+  
+  // If it's already an object, return it
+  if (typeof locationData === 'object' && locationData.lat && locationData.lng) {
+    return locationData;
+  }
+  
+  // If it's a string, try to parse it
+  if (typeof locationData === 'string') {
+    try {
+      const parsed = JSON.parse(locationData);
+      if (parsed && parsed.lat && parsed.lng) {
+        return parsed;
+      }
+    } catch (e) {
+      console.log('Failed to parse location:', e.message);
+    }
+  }
+  
+  return null;
+};
 
 // Get all pharmacies (public access for listing)
 router.get('/', async (req, res) => {
@@ -32,11 +55,6 @@ router.get('/', async (req, res) => {
 
     const pharmacies = await User.findAll({
       where: whereClause,
-      // include: [{
-      //   model: Pharmacy,
-      //   as: 'pharmacy',
-      //   required: false
-      // }],
       attributes: { exclude: ['password', 'resetToken', 'resetTokenExpiry'] },
       limit: parseInt(limit),
       offset: parseInt(offset),
@@ -45,18 +63,23 @@ router.get('/', async (req, res) => {
 
     // Transform the data to match expected format
     const transformedPharmacies = pharmacies.map(user => {
+      // Parse the location data properly
+      const locationData = parseLocation(user.location);
+      
       return {
         id: user.id,
-        name: user.pharmacyName || user.name, // Use pharmacyName field from your model
-        owner: user.name, // Use name as owner
+        name: user.pharmacyName || user.name,
+        owner: user.name,
         email: user.email,
         phone: user.phone,
-        license_number: user.license, // Use existing license field
-        status: user.isActive ? 'active' : 'pending', // Map from isActive
-        image_url: user.avatar, // Use existing avatar field
-        description: user.address, // Use address as description for now
-        pharmacy_location: user.location, // Use existing location field
+        license_number: user.license,
+        status: user.isActive ? 'active' : 'pending',
+        image_url: user.avatar || user.image_url || '',
+        description: user.address || user.description || '',
+        pharmacy_location: locationData, // Properly mapped location
         rating: user.rating || 5.0,
+        delivery_time: user.delivery_time || '20-30 دقيقة',
+        delivery_fee: user.delivery_fee || 25,
         total_orders: user.totalOrders || 0,
         is_verified: user.isVerified || false,
         online: user.online || false,
@@ -64,6 +87,12 @@ router.get('/', async (req, res) => {
         updated_at: user.updatedAt
       };
     });
+
+    console.log('Transformed pharmacies with locations:', transformedPharmacies.map(p => ({
+      name: p.name,
+      hasLocation: !!p.pharmacy_location,
+      location: p.pharmacy_location
+    })));
 
     res.json({
       success: true,
@@ -88,11 +117,6 @@ router.get('/:id', async (req, res) => {
 
     const pharmacy = await User.findOne({
       where: { id, role: 'pharmacy' },
-      // include: [{
-      //   model: Pharmacy,
-      //   as: 'pharmacy',
-      //   required: false
-      // }],
       attributes: { exclude: ['password', 'resetToken', 'resetTokenExpiry'] }
     });
 
@@ -103,6 +127,8 @@ router.get('/:id', async (req, res) => {
       });
     }
 
+    const locationData = parseLocation(pharmacy.location);
+
     const transformedPharmacy = {
       id: pharmacy.id,
       name: pharmacy.pharmacyName || pharmacy.name,
@@ -111,10 +137,12 @@ router.get('/:id', async (req, res) => {
       phone: pharmacy.phone,
       license_number: pharmacy.license,
       status: pharmacy.isActive ? 'active' : 'pending',
-      image_url: pharmacy.avatar,
-      description: pharmacy.address,
-      pharmacy_location: pharmacy.location,
+      image_url: pharmacy.avatar || pharmacy.image_url || '',
+      description: pharmacy.address || pharmacy.description || '',
+      pharmacy_location: locationData,
       rating: pharmacy.rating || 5.0,
+      delivery_time: pharmacy.delivery_time || '20-30 دقيقة',
+      delivery_fee: pharmacy.delivery_fee || 25,
       total_orders: pharmacy.totalOrders || 0,
       is_verified: pharmacy.isVerified || false,
       online: pharmacy.online || false,
@@ -143,7 +171,7 @@ router.post('/', adminAuth, async (req, res) => {
     const {
       name, owner, email, password, phone, license_number,
       status = 'pending', image_url, description, pharmacy_location,
-      role = 'pharmacy'
+      role = 'pharmacy', delivery_fee, delivery_time
     } = req.body;
 
     // Validation
@@ -168,6 +196,14 @@ router.post('/', adminAuth, async (req, res) => {
       });
     }
 
+    // Validate location
+    if (!pharmacy_location || !pharmacy_location.lat || !pharmacy_location.lng) {
+      return res.status(400).json({
+        success: false,
+        message: 'موقع الصيدلية مطلوب (يجب تحديد lat و lng)'
+      });
+    }
+
     // Check if email already exists
     const existingUser = await User.findOne({ where: { email } });
     if (existingUser) {
@@ -181,17 +217,19 @@ router.post('/', adminAuth, async (req, res) => {
     const salt = await bcrypt.genSalt(10);
     const hashedPassword = await bcrypt.hash(password, salt);
 
-    // Create user
+    // Create user with proper location storage
     const newUser = await User.create({
-      name: owner, // Use owner as the user name
-      pharmacyName: name, // Store pharmacy name separately
+      name: owner,
+      pharmacyName: name,
       email,
       password: hashedPassword,
       phone,
-      license: license_number, // Use existing license field
-      address: description, // Store description in address field
-      avatar: image_url || '', // Use avatar field for image
-      location: pharmacy_location || { lat: 30.0444, lng: 31.2357 }, // Use existing location field
+      license: license_number,
+      address: description || '',
+      avatar: image_url || '',
+      location: pharmacy_location, // Store as JSON object
+      delivery_fee: delivery_fee || 25,
+      delivery_time: delivery_time || '20-30 دقيقة',
       role: 'pharmacy',
       online: false,
       totalOrders: 0,
@@ -200,26 +238,11 @@ router.post('/', adminAuth, async (req, res) => {
       isActive: status === 'active'
     });
 
-    // Create pharmacy record (optional, for additional pharmacy-specific data)
-    // Commented out since Pharmacy model might not exist
-    // try {
-    //   await Pharmacy.create({
-    //     userId: newUser.id,
-    //     name,
-    //     owner,
-    //     license_number,
-    //     phone,
-    //     image_url: image_url || '',
-    //     description: description || '',
-    //     pharmacy_location: pharmacy_location || null,
-    //     status,
-    //     rating: 5.0,
-    //     total_orders: 0,
-    //     is_verified: status === 'active'
-    //   });
-    // } catch (pharmacyError) {
-    //   console.log('Pharmacy table creation skipped:', pharmacyError.message);
-    // }
+    console.log('Created pharmacy with location:', {
+      id: newUser.id,
+      name: newUser.pharmacyName,
+      location: newUser.location
+    });
 
     res.status(201).json({
       success: true,
@@ -231,6 +254,7 @@ router.post('/', adminAuth, async (req, res) => {
         email: newUser.email,
         phone: newUser.phone,
         license_number: newUser.license,
+        pharmacy_location: parseLocation(newUser.location),
         status: newUser.isActive ? 'active' : 'pending'
       }
     });
@@ -250,7 +274,8 @@ router.put('/:id', authenticateToken, async (req, res) => {
     const { id } = req.params;
     const {
       name, owner, email, phone, license_number,
-      status, image_url, description, pharmacy_location
+      status, image_url, description, pharmacy_location,
+      delivery_fee, delivery_time
     } = req.body;
 
     const pharmacy = await User.findOne({
@@ -296,7 +321,7 @@ router.put('/:id', authenticateToken, async (req, res) => {
       }
     }
 
-    // Update fields - map to your existing User model fields
+    // Update fields
     const updateData = {};
     if (name !== undefined) updateData.pharmacyName = name;
     if (owner !== undefined) updateData.name = owner;
@@ -309,20 +334,26 @@ router.put('/:id', authenticateToken, async (req, res) => {
     }
     if (image_url !== undefined) updateData.avatar = image_url;
     if (description !== undefined) updateData.address = description;
-    if (pharmacy_location !== undefined) updateData.location = pharmacy_location;
+    if (pharmacy_location !== undefined) {
+      // Validate location format
+      if (pharmacy_location && (!pharmacy_location.lat || !pharmacy_location.lng)) {
+        return res.status(400).json({
+          success: false,
+          message: 'تنسيق الموقع غير صحيح (يجب أن يحتوي على lat و lng)'
+        });
+      }
+      updateData.location = pharmacy_location;
+    }
+    if (delivery_fee !== undefined) updateData.delivery_fee = delivery_fee;
+    if (delivery_time !== undefined) updateData.delivery_time = delivery_time;
 
     await pharmacy.update(updateData);
 
-    // Also update pharmacy table if it exists
-    // Commented out since Pharmacy model might not exist
-    // try {
-    //   const pharmacyRecord = await Pharmacy.findOne({ where: { userId: id } });
-    //   if (pharmacyRecord) {
-    //     await pharmacyRecord.update(updateData);
-    //   }
-    // } catch (pharmacyUpdateError) {
-    //   console.log('Pharmacy table update skipped:', pharmacyUpdateError.message);
-    // }
+    console.log('Updated pharmacy with location:', {
+      id: pharmacy.id,
+      name: pharmacy.pharmacyName,
+      location: pharmacy.location
+    });
 
     res.json({
       success: true,
@@ -334,6 +365,7 @@ router.put('/:id', authenticateToken, async (req, res) => {
         email: pharmacy.email,
         phone: pharmacy.phone,
         license_number: pharmacy.license,
+        pharmacy_location: parseLocation(pharmacy.location),
         status: pharmacy.isActive ? 'active' : 'pending'
       }
     });
@@ -376,20 +408,6 @@ router.patch('/:id/status', adminAuth, async (req, res) => {
       isVerified: status === 'active'
     });
 
-    // Also update pharmacy table if it exists
-    // Commented out since Pharmacy model might not exist
-    // try {
-    //   const pharmacyRecord = await Pharmacy.findOne({ where: { userId: id } });
-    //   if (pharmacyRecord) {
-    //     await pharmacyRecord.update({ 
-    //       status,
-    //       is_verified: status === 'active'
-    //     });
-    //   }
-    // } catch (pharmacyUpdateError) {
-    //   console.log('Pharmacy table status update skipped:', pharmacyUpdateError.message);
-    // }
-
     res.json({
       success: true,
       message: 'تم تحديث حالة الصيدلية بنجاح',
@@ -424,15 +442,6 @@ router.delete('/:id', adminAuth, async (req, res) => {
       });
     }
 
-    // Delete pharmacy record first (if exists)
-    // Commented out since Pharmacy model might not exist
-    // try {
-    //   await Pharmacy.destroy({ where: { userId: id } });
-    // } catch (pharmacyDeleteError) {
-    //   console.log('Pharmacy table delete skipped:', pharmacyDeleteError.message);
-    // }
-
-    // Delete user
     await pharmacy.destroy();
 
     res.json({
@@ -472,6 +481,14 @@ router.get('/stats/overview', adminAuth, async (req, res) => {
       where: { role: 'pharmacy', online: true }
     });
 
+    // Count pharmacies with locations
+    const pharmaciesWithLocation = await User.count({
+      where: { 
+        role: 'pharmacy',
+        location: { [Op.ne]: null }
+      }
+    });
+
     res.json({
       success: true,
       stats: {
@@ -479,7 +496,8 @@ router.get('/stats/overview', adminAuth, async (req, res) => {
         active: activePharmacies,
         pending: pendingPharmacies,
         verified: verifiedPharmacies,
-        online: onlinePharmacies
+        online: onlinePharmacies,
+        withLocation: pharmaciesWithLocation
       },
       message: 'تم جلب إحصائيات الصيدليات بنجاح'
     });
